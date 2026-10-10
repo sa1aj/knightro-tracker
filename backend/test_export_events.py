@@ -14,9 +14,7 @@ spec.loader.exec_module(exporter)
 
 class ExportTests(unittest.TestCase):
     def test_filters_and_preserves_timezone_and_unmapped_events(self):
-        scratch = Path(__file__).parent / ".data/tests"
-        scratch.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+        with tempfile.TemporaryDirectory(prefix='knightro-export-test-') as directory:
             root = Path(directory)
             database, output = root / "events.db", root / "feed.json"
             with closing(sqlite3.connect(database)) as db:

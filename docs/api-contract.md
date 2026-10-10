@@ -1,26 +1,23 @@
-# Knightro Tracker API
+# Same-origin API
 
-This implementation is served under same-origin `/api` by `backend/server.py`. Timestamps are Unix seconds. Responses are JSON with `Cache-Control: no-store`. All POST routes require JSON and a matching Origin header. The browser sends the HttpOnly session cookie automatically.
+All times are Unix seconds. GET responses are no-store. POST requires application/json and the configured Origin. Session cookies are HttpOnly and scoped to /api. Errors return {"error":"message","retryAfter":null}; rate limits include Retry-After.
 
-| Route | Input | Result |
-| --- | --- | --- |
-| GET /api/auth/session | — | user (or null), nextSightingAt, cooldownSeconds, emailDelivery |
-| POST /api/auth/code | email, mode: signup/login, displayName (signup only) | Generic acknowledgement; sends a six-digit email code |
-| POST /api/auth/verify | email, code | Session cookie plus session response; creates new verified account if needed |
-| POST /api/auth/logout | {} | Revokes current session and expires cookie |
-| GET /api/sightings | — | sightings from last 20 minutes, newest first |
-| POST /api/sightings | lat, long, caption? | 201: sightingId, timestamp, nextSightingAt |
-| GET /api/leaderboard | — | leaders: [{id, displayName, score}], period: all-time |
-| GET /api/events | — | events, generatedAt, available |
+- GET /healthz: read-only database probe.
+- GET /api/auth/session: user (or null), nextSightingAt, cooldownSeconds, emailDelivery (development/smtp/unconfigured).
+- POST /api/auth/code: email, mode (signup/login), displayName for signup. Generic delivery acknowledgement and expiresIn; never a code.
+- POST /api/auth/verify: email and six-digit code. Rotates the session cookie.
+- POST /api/auth/logout: clears the current session.
+- POST /api/camera-session: empty object, verified account required and report cooldown enforced. Returns captureToken and expiresAt=server time+120 seconds. Replaces any earlier token for this account.
+- POST /api/sightings: lat, long, optional caption (max 200), photo (JPEG data URL, max 2 MB decoded), captureToken. Requires a verified session, campus location, valid JPEG, fresh account-bound token, and 120-second cooldown. Consumes the token in the same transaction as posting. Client points, time, building, and bounty claims are ignored. Returns 201 with the complete sighting: sightingId, lat, long, caption, timestamp, campus, nextSightingAt, status=published, points, eligiblePoints, bountyId or null, buildingId, buildingName, placeLabel, photoUrl. The first daily bounty report awards 2 points; subsequent reports in that section publish for 1 point.
+- GET /api/sightings: published, operator-confirmed, and legacy sightings from the last 20 minutes. Fields include sightingId, lat, long, caption, timestamp, campus, placeLabel, buildingId, status, points, photoUrl or null.
+- GET /api/photos/REPORT_ID: sanitized JPEG. Published/confirmed photos are public; removed photos require the owning account.
+- GET /api/my-reports: own latest 30 reports, status, points, eligiblePoints, timestamp, placeLabel. Requires a session.
+- GET /api/leaderboard: public displayName and score (sum of published/confirmed/legacy points), period=all-time. No emails.
+- GET /api/events: available, generatedAt, filter=likely-knightro, events. Appearance evidence plus a known building is required. Each includes eventId, title, description, location, startsAt, endsAt, lat, long, campus, buildingId, buildingName, probability, reason, hosts, url. Probability is a heuristic. Map hints appear within 30 minutes of the start.
+- GET /api/game: serverTime, active bounties, unexpired alerts. Each bounty includes bountyId, sectorId, sectorName, campus, buildingId/buildingName (section anchor), lat/long (section center), buildings=[{buildingId,name}], area=[[longitude,latitude],...], startsAt, expiresAt, multiplier=2. Eligibility uses the same area polygon drawn on the map. Starts/expiry are successive campus midnights in America/New_York (23/25 hours on daylight-saving transitions). Main sections contain five buildings; Downtown contains its two mapped buildings. Alerts include alertId, message, reason, campus, createdAt, expiresAt; no user locations.
+- POST /api/presence: opted-in foreground lat/long. Verified account required. Stores a sector and opening time, ages out in ten minutes. Off-campus returns 400; unknown sectors contribute nothing.
+- GET /api/push/config: enabled, publicKey or null.
+- POST /api/push/subscribe: browser Push API subscription with endpoint and keys.p256dh/auth. Verified accounts, recognized HTTPS push hosts, max five devices/account.
+- POST /api/push/unsubscribe: removes this account's subscription and queued jobs.
 
-User shape: `{id, displayName, email}` (only returned to that signed-in user). Leaderboards and sightings never expose email addresses.
-
-Sighting shape: `{sightingId, lat, long, caption, timestamp, campus}`. Campus is main, rosen, or downtown. Coordinates must be finite numbers inside a configured campus. Captions are trimmed and limited to 200 characters.
-
-Event shape: `{eventId, title, startsAt, endsAt, location, lat, long, hosts, url}`. Coordinates may be null. Missing feeds return `{events:[], generatedAt:null, available:false}`. Browser removes ended events, resolves known building names, and keeps unmappable events in the list.
-
-Errors use `{error, retryAfter?}`. Invalid input: 400. Missing/expired session: 401. Invalid Origin/Host: 403. Wrong Content-Type: 415. Size limit: 413. Rate/cooldown limit: 429 with Retry-After header and seconds. Unconfigured/unavailable service: 503.
-
-The two-minute posting cooldown is checked and written in one database transaction, including concurrent submissions. Reloading, clearing client storage, or using another browser cannot reset an account's cooldown. Two accounts remain two accounts; this does not claim to enforce one account per human.
-
-The earlier API at `https://zxigfjv1p9.execute-api.us-east-1.amazonaws.com` is a separate anonymous deployment. These changes do not modify it.
+JPEG validation establishes readable image evidence, not automated Knightro identification or cryptographic camera provenance. Optional operator rejection removes a report and its awarded points. The previous pending queue migrates once to published reports with stored eligible points and original expiry. Existing deployment endpoints remain unchanged.

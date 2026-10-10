@@ -1,5 +1,7 @@
 """Same-origin application server. Standard library only; see README.md."""
 import argparse
+import base64
+import io
 import hashlib
 import hmac
 import json
@@ -13,11 +15,16 @@ import smtplib
 import sqlite3
 import ssl
 import time
+import threading
+import logging
 from contextlib import contextmanager, closing
 from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+from PIL import Image, ImageOps, UnidentifiedImageError
+from campus import place, building_at, read_events
+import game
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -26,6 +33,7 @@ ACTIVE_SECONDS = 1200
 COOLDOWN = 120
 SESSION_SECONDS = 14 * 86400
 CODE_SECONDS = 600
+CAMERA_SECONDS = 120
 EMAIL_RE = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@(ucf\.edu|knights\.ucf\.edu)", re.ASCII)
 
 
@@ -71,8 +79,46 @@ def initialize(path):
                 email TEXT NOT NULL, ip TEXT NOT NULL, created INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS mail_requests_time ON mail_requests(created);
+            CREATE TABLE IF NOT EXISTS camera_tokens (
+                user_id TEXT PRIMARY KEY, token_hash TEXT NOT NULL, expires INTEGER NOT NULL
+            );
         """)
         db.commit()
+        game.migrate(db)
+        db.commit()
+
+
+def photo_bytes(value):
+    if not isinstance(value, str) or not value.startswith('data:image/jpeg;base64,') or len(value) > 2800000:
+        raise APIError(400, 'Attach a camera photo (JPEG, maximum 2 MB).')
+    try:
+        raw = base64.b64decode(value.split(',', 1)[1], validate=True)
+        if len(raw) > 2000000:
+            raise ValueError()
+        with Image.open(io.BytesIO(raw)) as image:
+            if image.format != 'JPEG' or image.width * image.height > 16000000 or min(image.size) < 240:
+                raise ValueError()
+            image.load()
+            clean = ImageOps.exif_transpose(image).convert('RGB')
+            clean.thumbnail((1600, 1600))
+            output = io.BytesIO()
+            clean.save(output, format='JPEG', quality=85)  # No EXIF/GPS metadata survives.
+            return output.getvalue()
+    except (ValueError, OSError, UnidentifiedImageError, Image.DecompressionBombError):
+        raise APIError(400, 'This photo could not be read. Take another photo.')
+
+
+def smtp_settings():
+    host, sender = os.environ.get('SMTP_HOST'), os.environ.get('SMTP_FROM')
+    if not host and not sender:
+        return None
+    mode = os.environ.get('SMTP_SECURITY', 'starttls')
+    port = int(os.environ.get('SMTP_PORT', '465' if mode == 'ssl' else '587'))
+    if not host or not sender or '\n' in sender or '\r' in sender or mode not in ('ssl', 'starttls') or not 1 <= port <= 65535:
+        raise ValueError('Set SMTP_HOST, SMTP_FROM, and SMTP_SECURITY=starttls or ssl with a valid SMTP_PORT')
+    if bool(os.environ.get('SMTP_USER')) != bool(os.environ.get('SMTP_PASSWORD')):
+        raise ValueError('Set both SMTP_USER and SMTP_PASSWORD')
+    return host, sender, port, mode
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -133,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             "user": {"id": row["id"], "displayName": row["name"], "email": row["email"]} if row else None,
             "nextSightingAt": row["last_post"] + COOLDOWN if row else 0,
             "cooldownSeconds": COOLDOWN,
-            "emailDelivery": "development" if self.server.dev_mail else "smtp" if os.environ.get("SMTP_HOST") else "unconfigured",
+            "emailDelivery": "development" if self.server.dev_mail else "smtp" if smtp_settings() else "unconfigured",
         }
 
     def session_cookie(self, token, age=SESSION_SECONDS):
@@ -142,6 +188,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
+            if urlsplit(self.path).path == '/healthz':
+                with self.db_connection() as db:
+                    db.execute('SELECT 1').fetchone()
+                self.respond(200, {'ok': True})
+                return
             self.check_host()
             path = urlsplit(self.path).path
             if path.startswith("/api/"):
@@ -150,22 +201,46 @@ class Handler(BaseHTTPRequestHandler):
                         result = self.session_data(self.user(db))
                     elif path == "/api/sightings":
                         rows = db.execute("""
-                            SELECT id AS sightingId, lat, lng AS long, caption, timestamp, campus
-                            FROM sightings WHERE timestamp>? ORDER BY timestamp DESC
+                            SELECT id AS sightingId, lat, lng AS long, caption, timestamp, campus,
+                                place_label AS placeLabel, building_id AS buildingId, status, points,
+                                CASE WHEN photo IS NOT NULL THEN '/api/photos/' || id ELSE NULL END AS photoUrl
+                            FROM sightings WHERE timestamp>? AND status IN ('published','confirmed','legacy') ORDER BY timestamp DESC
                         """, (int(time.time()) - ACTIVE_SECONDS,)).fetchall()
                         result = {"sightings": [dict(r) for r in rows]}
                     elif path == "/api/leaderboard":
                         rows = db.execute("""
-                            SELECT u.id, u.name AS displayName, COUNT(s.id) AS score
+                            SELECT u.id, u.name AS displayName, SUM(s.points) AS score
                             FROM users u JOIN sightings s ON s.user_id=u.id
+                            WHERE s.status IN ('published','confirmed','legacy')
                             GROUP BY u.id ORDER BY score DESC, u.created ASC, u.id ASC LIMIT 50
                         """).fetchall()
                         result = {"leaders": [dict(r) for r in rows], "period": "all-time"}
                     elif path == "/api/events":
-                        if self.server.events_file.exists():
-                            result = json.loads(self.server.events_file.read_text(encoding="utf-8"))
-                        else:
-                            result = {"events": [], "generatedAt": None, "available": False}
+                        result = read_events(self.server.events_file, int(time.time()))
+                    elif path == '/api/game':
+                        now = int(time.time())
+                        alerts = db.execute('SELECT id AS alertId,message,reason,campus,created AS createdAt,expires AS expiresAt FROM alerts WHERE expires>? ORDER BY created DESC', (now,)).fetchall()
+                        result = {'bounties': game.bounties(db, now), 'alerts': [dict(a) for a in alerts], 'serverTime': now}
+                    elif path == '/api/my-reports':
+                        user = self.user(db, required=True)
+                        rows = db.execute('SELECT id AS sightingId,place_label AS placeLabel,status,points,candidate_points AS eligiblePoints,timestamp FROM sightings WHERE user_id=? ORDER BY timestamp DESC LIMIT 30', (user['id'],)).fetchall()
+                        result = {'reports': [dict(r) for r in rows]}
+                    elif path == '/api/push/config':
+                        result = {'enabled': game.push_enabled(), 'publicKey': os.environ.get('VAPID_PUBLIC_KEY') if game.push_enabled() else None}
+                    elif path.startswith('/api/photos/'):
+                        sid = path.removeprefix('/api/photos/')
+                        row = db.execute("SELECT photo,user_id,status FROM sightings WHERE id=?", (sid,)).fetchone()
+                        user = self.user(db)
+                        if not row or not row['photo'] or (row['status'] not in ('published','confirmed') and (not user or user['id'] != row['user_id'])):
+                            raise APIError(404, 'Photo not found.')
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'image/jpeg')
+                        self.send_header('Content-Length', str(len(row['photo'])))
+                        self.send_header('Cache-Control', 'no-store')
+                        self.send_header('X-Content-Type-Options', 'nosniff')
+                        self.end_headers()
+                        self.wfile.write(row['photo'])
+                        return
                     else:
                         raise APIError(404, "API route not found.")
                 self.respond(200, result)
@@ -210,7 +285,8 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 raise APIError(400, "Invalid request size.")
-            if not 0 < length <= 16384:
+            path = urlsplit(self.path).path
+            if not 0 < length <= (3000000 if path == '/api/sightings' else 16384):
                 raise APIError(413, "Request is too large or empty.")
             try:
                 data = json.loads(self.rfile.read(length))
@@ -229,6 +305,35 @@ class Handler(BaseHTTPRequestHandler):
                 self.respond(200, {"ok": True}, self.session_cookie("", 0))
             elif path == "/api/sightings":
                 self.post_sighting(data)
+            elif path == '/api/camera-session':
+                self.camera_session()
+            elif path in ('/api/presence', '/api/push/subscribe', '/api/push/unsubscribe'):
+                with self.db_connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    user = self.user(db, required=True)
+                    if path == '/api/presence':
+                        lat, lng = data.get('lat'), data.get('long')
+                        if any(type(n) not in (int, float) or not math.isfinite(n) for n in (lat, lng)) or not campus_for(lat, lng):
+                            raise APIError(400, 'Choose a valid campus location.')
+                        b, _ = building_at(lat, lng)
+                        if b:
+                            game.record_open(db, user['id'], b, int(time.time()))
+                    elif path == '/api/push/subscribe':
+                        if not game.push_enabled():
+                            raise APIError(503, 'Push notifications are not configured yet. In-app alerts are available.')
+                        try:
+                            subscription = game.validate_subscription(data.get('subscription'))
+                        except (ValueError, TypeError, KeyError):
+                            raise APIError(400, 'Invalid push subscription.')
+                        if db.execute('SELECT COUNT(*) FROM subscriptions WHERE user_id=?', (user['id'],)).fetchone()[0] >= 5 and not db.execute('SELECT 1 FROM subscriptions WHERE endpoint=? AND user_id=?', (subscription['endpoint'], user['id'])).fetchone():
+                            raise APIError(400, 'Maximum of five notification devices per account.')
+                        db.execute('INSERT OR REPLACE INTO subscriptions VALUES (?,?,?,?)',
+                                   (subscription['endpoint'], user['id'], json.dumps(subscription), int(time.time())))
+                    else:
+                        endpoint = data.get('endpoint')
+                        db.execute('DELETE FROM subscriptions WHERE user_id=? AND endpoint=?', (user['id'], endpoint))
+                        db.execute('DELETE FROM push_jobs WHERE endpoint=? AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE endpoint=?)', (endpoint, endpoint))
+                self.respond(200, {'ok': True})
             else:
                 raise APIError(404, "API route not found.")
         except APIError as exc:
@@ -253,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(400, "Choose sign in or create account.")
         if not isinstance(name, str) or (mode == "signup" and not 2 <= len(name.strip()) <= 30):
             raise APIError(400, "Choose a public display name between 2 and 30 characters.")
-        if not self.server.dev_mail and not os.environ.get("SMTP_HOST"):
+        if not self.server.dev_mail and not smtp_settings():
             raise APIError(503, "Email sign-in is not configured yet. Please try again later.")
         now = int(time.time())
         code, salt = f"{secrets.randbelow(1000000):06d}", secrets.token_hex(16)
@@ -291,13 +396,18 @@ class Handler(BaseHTTPRequestHandler):
             file = self.server.outbox / (digest(email) + ".txt")
             file.write_text(f"To: {email}\nYour Knightro verification code: {code}\nExpires in 10 minutes.\n")
             return
+        host, sender, port, mode = smtp_settings()
         message = EmailMessage()
-        message["From"] = os.environ["SMTP_FROM"]
+        message["From"] = sender
         message["To"] = email
         message["Subject"] = "Your Knightro Tracker sign-in code"
         message.set_content(f"Your code is {code}. It expires in 10 minutes.\nIf you did not request this code, ignore this email.")
-        with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ.get("SMTP_PORT", 587)), timeout=15) as smtp:
-            smtp.starttls(context=ssl.create_default_context())
+        message.add_alternative(f'<h1>Knightro Tracker</h1><p>Your UCF verification code:</p><p style="font-size:32px;font-weight:bold">{code}</p><p>Expires in 10 minutes. Never share this code.</p>', subtype='html')
+        factory = smtplib.SMTP_SSL if mode == 'ssl' else smtplib.SMTP
+        options = {'context': ssl.create_default_context()} if mode == 'ssl' else {}
+        with factory(host, port, timeout=15, **options) as smtp:
+            if mode == 'starttls':
+                smtp.starttls(context=ssl.create_default_context())
             if os.environ.get("SMTP_USER"):
                 smtp.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
             smtp.send_message(message)
@@ -326,6 +436,20 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM challenges WHERE email=?", (email,))
         self.respond(200, self.session_data(user), self.session_cookie(token))
 
+    def camera_session(self):
+        """One short-lived capture window per verified account. Tokens are consumed on publish."""
+        now, token = int(time.time()), secrets.token_urlsafe(32)
+        with self.db_connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            user = self.user(db, required=True)
+            remaining = user['last_post'] + COOLDOWN - now
+            if remaining > 0:
+                raise APIError(429, f'Please wait {remaining} seconds before another sighting.', remaining)
+            db.execute('DELETE FROM camera_tokens WHERE expires<=?', (now,))
+            db.execute('INSERT OR REPLACE INTO camera_tokens VALUES (?,?,?)',
+                       (user['id'], digest(token), now + CAMERA_SECONDS))
+        self.respond(200, {'captureToken': token, 'expiresAt': now + CAMERA_SECONDS})
+
     def post_sighting(self, data):
         lat, lng = data.get("lat"), data.get("long")
         caption = data.get("caption", "")
@@ -343,13 +467,31 @@ class Handler(BaseHTTPRequestHandler):
             remaining = user["last_post"] + COOLDOWN - now
             if remaining > 0:
                 raise APIError(429, f"Please wait {remaining} seconds before another sighting.", remaining)
-            db.execute("INSERT INTO sightings VALUES (?,?,?,?,?,?,?)",
-                       (sid, user["id"], lat, lng, caption.strip(), now, campus["id"]))
+            token = data.get('captureToken')
+            capture = db.execute('SELECT * FROM camera_tokens WHERE user_id=?', (user['id'],)).fetchone()
+            if (not isinstance(token, str) or not capture or capture['expires'] <= now
+                    or not hmac.compare_digest(capture['token_hash'], digest(token))):
+                raise APIError(400, 'Take a fresh camera photo before submitting (valid for two minutes).')
+            photo = photo_bytes(data.get('photo'))
+            label = place(lat, lng)
+            bounty_id, eligible = game.reward(db, lat, lng, now)
+            if bounty_id and db.execute("SELECT 1 FROM sightings WHERE user_id=? AND bounty_id=? AND status IN ('published','confirmed')", (user['id'], bounty_id)).fetchone():
+                # The daily bonus is once per account; later sightings still publish for normal points.
+                bounty_id, eligible = None, 1
+            db.execute('''INSERT INTO sightings(id,user_id,lat,lng,caption,timestamp,campus,
+                building_id,place_label,photo,status,points,bounty_id,candidate_points)
+                VALUES (?,?,?,?,?,?,?,?,?,?,'published',?,?,?)''',
+                       (sid, user['id'], lat, lng, caption.strip(), now, campus['id'], label['buildingId'],
+                        label['placeLabel'], photo, eligible, bounty_id, eligible))
             db.execute("UPDATE users SET last_post=? WHERE id=?", (now, user["id"]))
-        self.respond(201, {"sightingId": sid, "timestamp": now, "nextSightingAt": now + COOLDOWN})
+            db.execute('DELETE FROM camera_tokens WHERE user_id=?', (user['id'],))
+        self.respond(201, {"sightingId": sid, "timestamp": now, "nextSightingAt": now + COOLDOWN,
+                          'status': 'published', 'points': eligible, 'eligiblePoints': eligible, 'bountyId': bounty_id,
+                          'lat': lat, 'long': lng, 'caption': caption.strip(), 'campus': campus['id'],
+                          'photoUrl': '/api/photos/' + sid, **label})
 
 
-def create_server(port, database, events_file, public_origin=None, dev_mail=False, outbox=None):
+def create_server(port, database, events_file, public_origin=None, dev_mail=False, outbox=None, run_worker=False, bind='127.0.0.1'):
     origin = public_origin or f"http://localhost:{port}"
     parsed = urlsplit(origin)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.path not in ("", "/"):
@@ -358,8 +500,14 @@ def create_server(port, database, events_file, public_origin=None, dev_mail=Fals
         raise ValueError("--dev-mail is only available with the local default origin")
     if public_origin and parsed.scheme != "https":
         raise ValueError("A deployed PUBLIC_ORIGIN must use HTTPS")
+    if not dev_mail:
+        smtp_settings()  # Fail at startup for incomplete sender/auth/TLS configuration.
+    if game.push_enabled():
+        import pywebpush  # A configured deployment must have the delivery dependency.
+    if dev_mail and bind != '127.0.0.1':
+        raise ValueError('--dev-mail must bind to loopback')
     initialize(database)
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((bind, port), Handler)
     server.database, server.events_file = database, events_file
     server.public_origin = origin.rstrip("/")
     server.dev_mail = dev_mail
@@ -367,12 +515,25 @@ def create_server(port, database, events_file, public_origin=None, dev_mail=Fals
     actual_port = server.server_address[1]
     server.allowed_origins = {server.public_origin} if public_origin else {f"http://localhost:{actual_port}", f"http://127.0.0.1:{actual_port}"}
     server.allowed_hosts = {urlsplit(o).netloc for o in server.allowed_origins}
+    server.worker_stop = threading.Event()
+    if run_worker:
+        def worker():
+            while not server.worker_stop.is_set():
+                try:
+                    game.tick(database, events_file)
+                    game.deliver_push(database)
+                except Exception:
+                    logging.exception('Knight-Sense worker failed; will retry')
+                server.worker_stop.wait(15)
+        server.worker = threading.Thread(target=worker, daemon=True)
+        server.worker.start()
     return server
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument('--bind', default='127.0.0.1', help='Use 0.0.0.0 inside a private production container')
     parser.add_argument("--database", type=Path, default=ROOT.parent / "knightro-tracker-data/knightro.db")
     parser.add_argument("--events", type=Path, default=FRONTEND / "data/events.json")
     parser.add_argument("--public-origin", default=os.environ.get("PUBLIC_ORIGIN"))
@@ -380,7 +541,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not args.dev_mail and os.environ.get("SMTP_HOST") and not os.environ.get("SMTP_FROM"):
         parser.error("Set SMTP_FROM with SMTP_HOST")
-    server = create_server(args.port, args.database, args.events, args.public_origin, args.dev_mail)
+    server = create_server(args.port, args.database, args.events, args.public_origin, args.dev_mail, run_worker=True, bind=args.bind)
     print(f"Knightro Tracker: http://localhost:{args.port}/frontend/", flush=True)
     if args.dev_mail:
         print(f"LOCAL TEST MAIL ONLY: codes are in {server.outbox.resolve()}", flush=True)
@@ -389,4 +550,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
+        server.worker_stop.set()
+        server.worker.join(timeout=15)
         server.server_close()

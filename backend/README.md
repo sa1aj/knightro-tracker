@@ -1,41 +1,37 @@
-# Application backend
+# Backend
 
-`server.py` serves the frontend and `/api` from one origin. It uses Python's standard library and SQLite and binds to 127.0.0.1. The older Lambda folders contain historical deployment notes only; their deployed code was not present in this repository.
+Python 3.12+; install backend/requirements.txt. server.py serves the frontend and same-origin /api with transactional SQLite storage. A 15-second background loop rotates daily bounties and delivers push. It binds to loopback by default. Use --bind 0.0.0.0 only inside a private deployment behind an HTTPS proxy; --dev-mail requires loopback.
 
-## Local use
+## Verification email
 
-Run `python backend/server.py --port 8000` from the repo root. Use `--port 8001` if another server occupies 8000. Stop with Ctrl+C.
+Signup/sign-in sends a random six-digit code valid for ten minutes. Salted hashes, single consumption, five attempts, per-email and per-IP request limits protect the flow. Verified @ucf.edu and @knights.ucf.edu accounts receive rotated opaque session cookies (HttpOnly, SameSite=Lax, Path=/api, 14 days; Secure with HTTPS PUBLIC_ORIGIN). Every mutation checks Origin and JSON content type. Host is checked except for the read-only /healthz probe.
 
-The default database and optional development mail live in `../knightro-tracker-data/`, outside the repository's static root. Override with `--database PATH`. Do not expose that directory through a file server. Database writes use transactions and enforce the sighting cooldown inside a write lock.
+SMTP_HOST and SMTP_FROM configure delivery. SMTP_SECURITY=starttls/587 is the default; ssl/465 is also supported. SMTP_USER and SMTP_PASSWORD must be supplied together. TLS certificates are verified and timeouts enforced. Incomplete configuration fails at startup. backend/.env.example documents variables; it is not loaded automatically. Local --dev-mail saves codes beside the database and cannot use a public origin.
 
-## Email verification and cookies
+## Live photos, publication, and points
 
-Signup/sign-in sends a random six-digit code valid for 10 minutes. Signup creates the account only after code verification. Existing accounts keep their original public name. Codes are hashed with a random salt, limited to five verification attempts, and consumed once. Code sending is limited to once/minute and five/hour per email, plus ten/hour per connecting IP. Challenge and expired-session cleanup runs when sending a new code.
+POST /api/camera-session issues a single-use account-bound token lasting 120 seconds. The inline frontend camera requests it at snap time. There is no photo picker or extra dialog. POST /api/sightings requires that token and a JPEG data URL (2 MB decoded, 240px minimum dimension, 16 megapixels maximum). Pillow decodes, normalizes to at most 1600px, and removes EXIF/GPS metadata.
 
-Both @ucf.edu and @knights.ucf.edu are accepted; subdomains and lookalike suffixes are rejected. No passwords are stored. Each accepted sighting earns one point and locks the account's next sighting for 120 seconds.
+The server consumes the token, validates the campus/building, enforces a 120-second cooldown, determines bounty eligibility, inserts a published report, and awards points in one transaction. Reports immediately appear on the map, in Recent Sightings, and on the leaderboard. Normal reports earn 1 point; the first report per account per daily bounty earns 2. Later reports inside that area continue posting for 1 point. A published photo is public by opaque report ID. This validates image format and a recent capture session; it does not identify Knightro automatically or prove camera provenance against a modified client.
 
-A successful verification rotates the browser session and sets an opaque, random `kt_session` cookie with `HttpOnly; SameSite=Lax; Path=/api; Max-Age=1209600`. The database stores only its hash. Sessions expire after 14 days and are deleted on sign-out. With HTTPS `PUBLIC_ORIGIN`, cookies also have `Secure`. No JavaScript-readable authentication token or localStorage login flag is used.
+Pins expire 20 minutes after submission; historical points remain. The previous version's validated pending photos migrate to published with their stored candidate points, preserving timestamps. Legacy scores survive migration. Back up the database before release.
 
-All mutations require JSON and an Origin in the configured allowlist. There is no wildcard CORS. Host validation prevents arbitrary hostnames from reaching the local API. Frontend only renders untrusted text as text nodes.
+Optional moderate.py --decision approve marks a published photo confirmed without doubling points. --decision reject removes its public pin/score and makes the photo owner-only. Review is not required to post. --export writes live photos to a private review directory.
 
-Set environment variables:
+## Daily bounty sections
 
-- `SMTP_HOST` and `SMTP_FROM`
-- `SMTP_PORT`, default 587 (STARTTLS required)
-- `SMTP_USER` and `SMTP_PASSWORD`, when your provider requires authentication
+Four Main Campus choices each contain five curated neighboring buildings. The boundary is a convex hull of their official footprints, padded about 25m and including connecting paths. Downtown has a section covering its two mapped academic buildings. Rosen reports currently earn normal points.
 
-`--dev-mail` is a local-only test mode that writes codes beside the database. It never sends email and cannot be combined with `--public-origin`. Do not use it as public authentication. Without SMTP or explicit development mode, the server fails closed when someone requests a code.
+One section per configured campus is randomly selected for the whole America/New_York calendar day. The persistent unique(campus,starts) slot prevents rerolls on restart or duplicate workers. The map uses the same polygon as server eligibility; there is no 120m bounty radius. Daylight-saving transitions correctly use successive campus midnights. Old half-hour drops retire during schema migration.
 
-## Production handoff
+## Knight-Sense and push
 
-This is a functional local application server, not an automatic AWS deployment. Before publishing:
+Location signals are optional. Verified foreground openings resolve to a known building; presence stores only account/sector/time, never exact coordinates. At most one opening/account/minute contributes. Six distinct accounts in five minutes against at most two in the preceding window triggers an unconfirmed building hint. Records expire after ten minutes. Alert deduplication, a 15-minute global cooldown, and a one-hour sector cooldown limit noise. Upcoming likely appearances also generate hints based on listing text and official building matches.
 
-1. Configure a real SMTP sender and verify delivery to a UCF inbox.
-2. Put the application behind a production HTTPS reverse proxy on the same origin as the frontend and set `PUBLIC_ORIGIN=https://your-host`.
-3. Persist and back up the SQLite database outside the web root. This implementation targets a single server; use shared transactional storage before scaling to multiple replicas.
-4. Add edge request limits/timeouts and a deployment process/service manager. The standard-library HTTP server is intended for local development, not direct public exposure.
-5. The IP mail limit uses the socket peer, never untrusted forwarded headers. Behind a reverse proxy, configure an appropriate edge per-client limit; the application will otherwise see the proxy as one shared IP.
-6. Publish the scraper's exported event JSON to the path provided via `--events`.
-7. Retire or protect the old anonymous AWS `POST /sightings` endpoint if migrating production. This local change does not secure that separate deployed endpoint or migrate its DynamoDB data.
+Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT with pywebpush installed. HTTPS and browser permission are required outside localhost. The service worker is scoped to /frontend/. Authenticated subscriptions are limited to five/account and recognized HTTPS browser push services.
 
-GitHub Pages alone cannot serve this backend. Keep the frontend and API on the same origin rather than relying on third-party session cookies.
+Persistent push jobs are leased, retried with backoff up to five attempts, and discarded when alerts expire. 404/410 removes the subscription. Delivery is at least once after a worker crash; alert-specific notification tags collapse repeats. Changing the VAPID key requires resubscription. iPhone Web Push requires a supported Home Screen app.
+
+## Production
+
+Use one instance with durable SQLite/local block storage behind a hardened HTTPS proxy, edge limits, request timeouts, and PUBLIC_ORIGIN. Preserve public Host; do not trust arbitrary forwarded headers. The standard-library server is for development and must stay private in deployment. Before multiple replicas or serverless, move transactions and leases to shared storage and photos to object storage. See [AWS handoff](../docs/aws-deployment.md). The existing scraper Lambda and GitHub Pages do not deploy this application backend.

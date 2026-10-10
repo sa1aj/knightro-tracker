@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Silkscreen:wght@400;700&display=swap" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/missions.css" />
   </head>
   <body class="booting">
     <div id="map" class="map-root" aria-label="Map of UCF main campus with Knightro sightings"></div>
@@ -28,6 +29,9 @@
       <button type="button" id="btn-recenter">⌖ Recenter map</button>
       <button type="button" data-panel="recent">◉ Recent sightings</button>
       <button type="button" data-panel="events">▣ Campus events</button>
+      <button type="button" data-panel="bounties">⚡ High-Value Bounties</button>
+      <button type="button" data-panel="sense">◎ Knight-Sense alerts</button>
+      <button type="button" data-panel="reports">▤ My photo reports</button>
       <button type="button" data-panel="leaderboard">★ Leaderboard</button>
       <button type="button" data-panel="account" id="account-label">◇ Sign in / create account</button>
       <p>UCF Main · Rosen · Downtown</p>
@@ -35,6 +39,10 @@
     <button type="button" class="tile corner r" id="btn-sound" aria-pressed="true" aria-label="Sound on" title="Sound"><img data-icon="speaker" alt="" /></button>
 
     <div class="status" id="status" role="status"><i class="dot" aria-hidden="true"></i><span id="status-text"></span></div>
+    <div class="mission-bar" aria-label="Live missions">
+      <button type="button" data-panel="bounties" id="mission-bounty">⚡ HIGH-VALUE BOUNTIES</button>
+      <button type="button" data-panel="sense" id="mission-sense">◎ KNIGHT-SENSE</button>
+    </div>
 
     <div class="dock">
       <span></span>
@@ -67,6 +75,8 @@
     <script src="js/fx.js"></script>
     <script src="js/api.js"></script>
     <script src="js/map-utils.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/knight-sense.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>

@@ -24,8 +24,11 @@ def export_events(database, output, days=14, now=None):
     conn = sqlite3.connect(database.resolve().as_uri() + "?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
+        columns = {row[1] for row in conn.execute('PRAGMA table_info(events)')}
+        description = 'description' if 'description' in columns else "'' AS description"
         rows = conn.execute("""
-            SELECT event_id,name,starts_at,ends_at,location,latitude,longitude,hosts,source_url
+            SELECT event_id,name,starts_at,ends_at,location,latitude,longitude,hosts,source_url,
+        """ + description + """
             FROM events WHERE is_listed=1 AND COALESCE(status,'') NOT IN ('CANCELLED','CANCELED')
             ORDER BY starts_at
         """).fetchall()
@@ -42,6 +45,7 @@ def export_events(database, output, days=14, now=None):
         hosts = json.loads(row["hosts"] or "[]")
         events.append({
             "eventId": str(row["event_id"]), "title": row["name"],
+            "description": row['description'],
             "startsAt": int(start.timestamp()), "endsAt": int(end.timestamp()),
             "location": row["location"], "lat": lat, "long": lng,
             "hosts": hosts if isinstance(hosts, list) else [], "url": row["source_url"],

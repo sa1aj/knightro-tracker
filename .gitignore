@@ -1,6 +1,7 @@
 # Secrets
 .env
 .env.*
+!backend/.env.example
 *.pem
 .aws/
 
@@ -25,3 +26,4 @@ backend/.data/
 *.db-shm
 *.db-wal
 frontend/data/events.json
+artifacts/

@@ -24,6 +24,13 @@
     verifyCode: (email, code) => request('/auth/verify', { email, code }),
     logout: () => request('/auth/logout', {}),
     getEvents: () => request('/events'),
+    getGame: () => request('/game'),
+    getReports: () => request('/my-reports'),
+    cameraSession: () => request('/camera-session', {}),
+    pushConfig: () => request('/push/config'),
+    subscribe: (subscription) => request('/push/subscribe', {subscription}),
+    unsubscribe: (endpoint) => request('/push/unsubscribe', {endpoint}),
+    openedNear: (lat, long) => request('/presence', {lat, long}),
     getLeaderboard: () => request('/leaderboard'),
     async getSightings() {
       const data = await request('/sightings');

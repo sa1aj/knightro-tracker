@@ -19,8 +19,6 @@ python backend/server.py --port 8001 --dev-mail
 
 Open http://127.0.0.1:8001/frontend/. The application server provides accounts, photo reports, bounties, and push delivery. The default database lives outside the repository at ../knightro-tracker-data/knightro.db; override with --database PATH. Development mail saves verification codes in dev-mail beside that database, never sends email, and is restricted to loopback.
 
-The radar HUD uses CARTO Dark Matter when `CARTO_BASEMAP_KEY` is configured in `frontend/js/config.js`. [Request a CARTO basemap key](https://www.carto.com/basemaps/) and restrict it to your frontend domains, including local development if needed. This is a browser-visible map key, not an AWS or backend secret. Without a key, the map uses dark-styled OpenStreetMap tiles with the appropriate provider attribution. No backend changes are required for either map provider.
-
 ## Behavior
 
 - Larger 66×74 pins fade to 55% opacity and expire 20 minutes after submission.
@@ -83,7 +81,6 @@ node --test frontend/tests/*.test.cjs
 node --check frontend/js/app.js
 node --check frontend/js/camera.js
 node --check frontend/js/knight-sense.js
-node --check frontend/js/hud.js
 node --check frontend/sw.js
 ```
 

@@ -30,9 +30,6 @@ window.KT = window.KT || {};
     ACCOUNTS: deployment.ACCOUNTS,
     STATIC_EVENTS_URL: deployment.STATIC_EVENTS_URL,
     POLL_MS: 12000, ACTIVE_WINDOW_SEC: 1200, FRESH_SEC: 300,
-    // CARTO now requires a browser-visible basemap key. Set it to enable Dark Matter.
-    // With no key, use readable OpenStreetMap tiles styled dark by the HUD stylesheet.
-    CARTO_BASEMAP_KEY: '',
     COOLDOWN_SEC: 120, CAPTION_MAX: 200,
     CAMPUSES_URL: 'data/campuses.json', BUILDINGS_URL: 'data/buildings.json', STOCK_PHOTOS: [],
     // One Knightro pin image for idle, hover and selected states.

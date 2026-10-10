@@ -3,7 +3,7 @@
 // textContent / text nodes (see h() below). Never use innerHTML with API data.
 (async function () {
   'use strict';
-  const { CONFIG, IMG, api, pixelPhoto, hash, sfx, fx, mapUtils, hud } = window.KT;
+  const { CONFIG, IMG, api, pixelPhoto, hash, sfx, fx, mapUtils } = window.KT;
   let campuses;
   try {
     const response = await fetch(CONFIG.CAMPUSES_URL);
@@ -58,6 +58,7 @@
   }
   const onCampus = (p) => campuses.some((c) => mapUtils.contains(c, p));
   const campusBounds = (c) => [[c.bounds.minLat, c.bounds.minLng], [c.bounds.maxLat, c.bounds.maxLng]];
+  const isMobile = () => matchMedia('(max-width: 720px)').matches;
 
   function photoFor(s) {
     if (s.photoUrl?.startsWith('/api/photos/')) return {src:s.photoUrl,pixel:false};
@@ -85,20 +86,20 @@
   const myPosts = new Set(); // ids this device just posted, so we don't announce them as "new"
 
   // ---------- map (created once, never replaced) ----------
-  const MAX_ZOOM = 19;
+  const MAX_ZOOM = 19; // OpenStreetMap's standard tiles stop at zoom 19.
   const map = L.map('map', {
     center: [campus.center.lat, campus.center.lng],
     zoom: 16, minZoom: 13, maxZoom: MAX_ZOOM,
     maxBoundsViscosity: 0.9,
     zoomControl: false,
   });
-  map.attributionControl.setPrefix(false);
-  const basemap = hud.basemap(CONFIG.CARTO_BASEMAP_KEY);
-  $('#map').classList.toggle('fallback-basemap', basemap.fallback);
-  L.tileLayer(basemap.url, basemap.options).addTo(map);
-  const radar = hud.createRadar(map, L, fx.reducedMotion);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    // OSM requires a Referer; send only the public origin for map tiles.
+    referrerPolicy: 'origin',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
   const zoomControl = L.control.zoom({ position: 'bottomleft', zoomInTitle: 'Zoom in', zoomOutTitle: 'Zoom out' }).addTo(map);
-  $('#map-controls').append(zoomControl.getContainer()); // Keep Leaflet's handlers and disabled states.
   // Recenter lives in the zoom group so the three map controls always sit together.
   const recenterButton = L.DomUtil.create('a', 'leaflet-control-recenter', zoomControl.getContainer());
   recenterButton.href = '#';
@@ -187,7 +188,6 @@
       marker.getElement()?.setAttribute('aria-label', label);
       marker.getElement()?.setAttribute('title', label);
       marker.setZIndexOffset(selected ? 800 : first.kind === 'sighting' ? 500 : 0);
-      radar.pulse(marker.getElement(), group.items, nowSec(), CONFIG.FRESH_SEC);
     }
     for (const [id, marker] of markers) if (!seen.has(id)) { marker.remove(); markers.delete(id); }
     updatePinAges();
@@ -249,7 +249,6 @@
     campus = campuses.find((c) => c.id === id) || campuses[0];
     applyCampusLimits(true);
     $('#campus-select').value = campus.id;
-    $('#campus-readout').textContent = 'UCF · ' + campus.name;
     $('#map').setAttribute('aria-label', 'Map of UCF ' + campus.name + ' with sightings and events');
     if (state.report && !mapUtils.contains(campus, state.report.pin)) {
       state.report.pin = {...campus.center}; state.report.gps = null;
@@ -271,24 +270,16 @@
   }
 
   /** Center a point in the part of the map the panel isn't covering. */
-  function mapViewPadding() {
-    const size = map.getSize(), panel = $('#panel');
-    const top = $('.hud-top').getBoundingClientRect().bottom + 16;
-    let right = 24, bottom = size.y - $('.hud-bottom').getBoundingClientRect().top + 16;
-    if (panel.classList.contains('open')) {
-      // Use layout offsets so opening transitions cannot distort the available map area.
-      if (panel.offsetWidth >= size.x * .8) bottom = Math.max(bottom, size.y - panel.offsetTop + 16);
-      else right = Math.max(right, size.x - panel.offsetLeft + 16);
-    }
-    return {paddingTopLeft: [24, top], paddingBottomRight: [right, bottom]};
-  }
   function focusOn(lat, lng, minZoom = 17) {
     const targetCampus = campuses.find((c) => mapUtils.contains(c, {lat, lng}));
     if (targetCampus && targetCampus.id !== campus.id) switchCampus(targetCampus.id);
     const z = Math.max(map.getZoom(), minZoom);
     const size = map.getSize();
-    const {paddingTopLeft: [left, top], paddingBottomRight: [right, bottom]} = mapViewPadding();
-    const target = L.point((left + size.x - right) / 2, (top + size.y - bottom) / 2);
+    const panel = $('#panel'), status = $('#status');
+    const open = panel.classList.contains('open');
+    let target = L.point(size.x / 2, size.y / 2);
+    if (open && isMobile()) target = L.point(size.x / 2, (status.offsetTop + status.offsetHeight + panel.offsetTop) / 2);
+    else if (open) target = L.point(panel.offsetLeft / 2, size.y / 2 - 40);
     const offset = L.point(size.x / 2, size.y / 2).subtract(target);
     sfx.play('whoosh');
     map.flyTo(map.unproject(map.project([lat, lng], z).add(offset), z), z, { duration: 0.7, easeLinearity: 0.2 });
@@ -374,7 +365,6 @@
     state.report = name === 'report' ? newReport() : null;
     state.panel = name;
     state.backTo = backTo;
-    if (name === 'sense') radar.sweep();
     render();
     if (name === 'report') locate();
     if (name === 'events') loadEvents();
@@ -867,7 +857,7 @@
       if (state.panel !== 'bounties') openPanel('bounties');
       if (b.campus !== campus.id) switchCampus(b.campus);
       const bounds = L.latLngBounds(b.area.map(([lng,lat]) => [lat,lng]));
-      map.fitBounds(bounds, {...mapViewPadding(), maxZoom:17});
+      map.fitBounds(bounds, {paddingTopLeft:[24,150], paddingBottomRight:isMobile() ? [24,Math.ceil(innerHeight*.6)] : [$('#panel').offsetWidth + 50,100], maxZoom:17});
     }}, h('strong', {class:'bounty-multiplier'}, '2×'), h('span', {}, h('strong',{},b.sectorName), h('span',{class:'small'}, b.buildings.length + ' BUILDINGS · UNTIL CAMPUS MIDNIGHT'),
       h('span',{class:'small bounty-buildings'},b.buildings.map(item => item.name).join(' · '))),
       h('b', {'data-expires':b.expiresAt,class:'bounty-clock'}, countdown(b.expiresAt)));
@@ -894,7 +884,7 @@
       !state.alerts.some(a => a.expiresAt > nowSec()) && h('p',{class:'msg'},'All quiet. Keep an eye on the map for the next signal.'),
       h('button',{type:'button',class:'px-btn',onclick:async () => {
         if (!state.user) return openPanel('account');
-        try { state.senseMessage = await window.KT.sense.enable(); if (state.panel === 'sense') radar.sweep(); } catch (error) { state.senseMessage = error.message; }
+        try { state.senseMessage = await window.KT.sense.enable(); } catch (error) { state.senseMessage = error.message; }
         if (state.panel === 'sense') render();
       }},'ENABLE PUSH ALERTS'),
       h('button',{type:'button',class:'px-btn alt',onclick:async () => {
@@ -980,11 +970,6 @@
     $('#btn-report').classList.toggle('active', reporting);
     $('#report-label').textContent = !reporting ? 'REPORT SIGHTING' : state.report?.step === 'done' ? 'CLOSE REPORT' : 'CANCEL REPORT';
     $('#btn-recent').classList.toggle('active', state.panel === 'recent');
-    document.querySelectorAll('.hud-top [data-panel], .hud-bottom [data-panel]').forEach(button => {
-      const expanded = button.dataset.panel === state.panel;
-      button.setAttribute('aria-expanded', String(expanded));
-      button.classList.toggle('active', expanded);
-    });
 
     renderMarkers();
 

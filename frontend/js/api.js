@@ -1,10 +1,11 @@
 (function () {
   'use strict';
   const { CONFIG } = window.KT;
-  async function request(path, body) {
+  const AWS_API = 'https://zxigfjv1p9.execute-api.us-east-1.amazonaws.com';
+  async function request(path, body, base = CONFIG.API_BASE) {
     let res;
     try {
-      res = await fetch(CONFIG.API_BASE + path, {
+      res = await fetch(base + path, {
         credentials: 'same-origin', cache: 'no-store',
         ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(15000),
@@ -23,7 +24,7 @@
     requestCode: (email, displayName, mode) => request('/auth/code', { email, displayName, mode }),
     verifyCode: (email, code) => request('/auth/verify', { email, code }),
     logout: () => request('/auth/logout', {}),
-    getEvents: () => request('/events'),
+    getEvents: () => request('/events.json', undefined, ''),
     getGame: () => request('/game'),
     getReports: () => request('/my-reports'),
     cameraSession: () => request('/camera-session', {}),
@@ -33,11 +34,11 @@
     openedNear: (lat, long) => request('/presence', {lat, long}),
     getLeaderboard: () => request('/leaderboard'),
     async getSightings() {
-      const data = await request('/sightings');
+      const data = await request('/sightings', undefined, AWS_API);
       return (data.sightings || []).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.long) && Number.isFinite(s.timestamp))
         .sort((a, b) => b.timestamp - a.timestamp);
     },
-    postSighting: (body) => request('/sightings', body),
+    postSighting: (body) => request('/sightings', body, AWS_API),
     // Admin routes. The server authorizes every call from the verified session; nothing here grants access.
     admin: {
       state: () => request('/admin/state'),

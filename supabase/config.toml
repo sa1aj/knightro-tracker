@@ -1,7 +1,7 @@
 project_id = "knightro-tracker"
 
 [auth]
-site_url = "https://knightro-tracker-frontend-teal.vercel.app"
+site_url = "https://knightro-tracker-potatogigabyte.vercel.app"
 enable_signup = true
 minimum_password_length = 12
 

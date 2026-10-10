@@ -4,6 +4,8 @@ Live UCF sightings, daily section bounties, and Knight-Sense building hints in t
 
 ## Supabase production backend
 
+Live site: **[Knightro Tracker](https://knightro-tracker-potatogigabyte.vercel.app/)**.
+
 The hosted backend now uses Supabase Auth, private Postgres data, private photo storage, and Edge Functions. See [Supabase deployment and operations](supabase/README.md) for the Vercel connection, password accounts without email codes, administrator setup, and manual event database imports. The scraper runs only when an operator starts it; Supabase serves its last imported snapshot.
 
 Supabase accounts are restricted to UCF email domains but **email ownership is unverified**. The verified-email and email-admin-allowlist instructions below describe the earlier Python/AWS backend. Supabase administrators are granted by confirmed account UUID instead.

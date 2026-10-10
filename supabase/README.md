@@ -2,6 +2,8 @@
 
 Production project: `uetdvbrfqmjbusivudam` (`knightro`). The SQL migrations and three Edge Functions in this folder implement the hosted backend. The Python backend remains available for local development and the earlier AWS deployment.
 
+Live frontend: [Knightro Tracker](https://knightro-tracker-potatogigabyte.vercel.app/). Vercel project `knightro-tracker` (`prj_6PTNUZzrXdYYjXNVHBBVSPgf9Cec`) uses `frontend` as its source root and has the private Production environment variables configured. It was deployed directly from the local source because GitHub publication was blocked by the integration's repository write permissions. Connect Git to this project only after publishing these source changes.
+
 ## Connect the existing Vercel site
 
 Use `frontend` as the Vercel project root. Set these **private server environment variables** for Production, then deploy the frontend changes in this branch:
@@ -13,7 +15,7 @@ Use `frontend` as the Vercel project root. Set these **private server environmen
 
 Retrieve the proxy token in the Supabase dashboard's Vault page. Do not generate a different token, put it in browser JavaScript, or use a `NEXT_PUBLIC_` / `VITE_` prefix. Supabase service keys are not needed in Vercel. Only the Vercel server calls the Edge API; browsers use the same-origin `/api/*` proxy.
 
-The allowed production origin is stored in Vault as `knightro_PUBLIC_ORIGIN`. Preview URLs do not accept account or report writes until an operator explicitly configures the intended origin. Redeploy after changing Vercel environment variables.
+The allowed production origin is stored in Vault as `knightro_PUBLIC_ORIGIN`, currently `https://knightro-tracker-potatogigabyte.vercel.app`. Use that canonical URL for accounts and reports. Alternate deployment aliases and preview URLs do not accept account or report writes until an operator explicitly configures the intended origin. Redeploy after changing Vercel environment variables.
 
 ## Accounts and cookies
 

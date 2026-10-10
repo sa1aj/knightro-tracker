@@ -26,16 +26,16 @@
         : "Can't reach Knightro HQ. Check your connection and retry."), { status: 'network' });
     }
     const json = (res.headers.get('Content-Type') || '').includes('application/json');
-    const data = json ? await res.json().catch(() => ({})) : {};
+    const data = json ? await res.json().catch(() => null) : null;
     if (!res.ok) {
-      let message = data.error;
+      let message = data?.error;
       if (!message && !json && sameOrigin && res.status === 404) {
         // A plain 404 page means no app server is answering /api (e.g. a static file server).
-        message = 'The Knightro app server is not running here. Start it with: python backend/server.py --dev-mail';
+        message = 'Knightro HQ is unavailable. Please try again later.';
       }
-      throw Object.assign(new Error(message || `Request failed (${res.status}). Please retry.`), { status: res.status, retryAfter: data.retryAfter });
+      throw Object.assign(new Error(message || `Request failed (${res.status}). Please retry.`), { status: res.status, retryAfter: data?.retryAfter });
     }
-    if (!json) throw Object.assign(new Error('Knightro HQ sent an unexpected response. Please retry.'), { status: res.status });
+    if (!json || !data || typeof data !== 'object') throw Object.assign(new Error('Knightro HQ sent an unexpected response. Please retry.'), { status: res.status });
     return data;
   }
   const app = (path, body) => request(CONFIG.API_BASE, path, body);

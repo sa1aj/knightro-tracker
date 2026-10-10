@@ -1,10 +1,10 @@
 (function () {
   'use strict';
-  const {api} = window.KT;
+  const {api, CONFIG} = window.KT;
   let registration;
   async function worker() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('This browser does not support Web Push. In-app alerts still work.');
-    registration ||= await navigator.serviceWorker.register('/frontend/sw.js', {scope:'/frontend/'});
+    registration ||= await navigator.serviceWorker.register(CONFIG.APP_BASE + 'sw.js', {scope:CONFIG.APP_BASE});
     await navigator.serviceWorker.ready;
     return registration;
   }

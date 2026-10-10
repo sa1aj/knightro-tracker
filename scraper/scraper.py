@@ -237,9 +237,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     default_url = os.getenv("DATABASE_URL", "sqlite:///events.db")
     if os.getenv("DATABASE_HOST"):
+        query = {"sslmode": os.getenv("DATABASE_SSLMODE", "require")}
+        if os.getenv("DATABASE_SSLROOTCERT"):
+            query['sslrootcert'] = os.environ['DATABASE_SSLROOTCERT']
         default_url = URL.create("postgresql+psycopg", username=os.getenv("DATABASE_USER", "eventsadmin"),
             password=os.environ["DATABASE_PASSWORD"], host=os.environ["DATABASE_HOST"],
-            port=5432, database=os.getenv("DATABASE_NAME", "events"), query={"sslmode": "require"})
+            port=int(os.getenv('DATABASE_PORT', '5432')), database=os.getenv("DATABASE_NAME", "events"), query=query)
     parser.add_argument("--database-url", default=default_url)
     parser.add_argument("--limit", type=int, help="Smoke test only; does not mark missing events unlisted")
     parser.add_argument("--delay", type=float, default=1.0, help="Seconds between requests/clicks (minimum 0.5)")

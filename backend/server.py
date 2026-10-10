@@ -2,6 +2,7 @@
 import argparse
 import base64
 import io
+import ipaddress
 import hashlib
 import hmac
 import json
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import signal
 import smtplib
 import sqlite3
 import ssl
@@ -143,6 +145,18 @@ class Handler(BaseHTTPRequestHandler):
     def check_host(self):
         if self.headers.get("Host") not in self.server.allowed_hosts:
             raise APIError(403, "Unrecognized host.")
+
+    def request_ip(self):
+        # The authenticated Vercel gateway sets this header. Other forwarded
+        # headers remain untrusted, including in local/default deployments.
+        expected = self.server.trusted_proxy_token
+        supplied = self.headers.get('X-Knightro-Proxy-Token', '')
+        if expected and hmac.compare_digest(expected.encode(), supplied.encode()):
+            try:
+                return str(ipaddress.ip_address(self.headers.get('X-Knightro-Client-IP', '')))
+            except ValueError:
+                pass
+        return self.client_address[0]
 
     @contextmanager
     def db_connection(self):
@@ -373,13 +387,14 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE expires<=?", (now,))
             db.execute("DELETE FROM challenges WHERE expires<=?", (now,))
             recent = db.execute("SELECT MAX(created) FROM mail_requests WHERE email=?", (email,)).fetchone()[0]
-            count = db.execute("SELECT COUNT(*) FROM mail_requests WHERE ip=?", (self.client_address[0],)).fetchone()[0]
+            address = self.request_ip()
+            count = db.execute("SELECT COUNT(*) FROM mail_requests WHERE ip=?", (address,)).fetchone()[0]
             per_email = db.execute("SELECT COUNT(*) FROM mail_requests WHERE email=?", (email,)).fetchone()[0]
             if recent and now - recent < 60:
                 raise APIError(429, "Wait a minute before requesting another code.", 60 - (now - recent))
             if count >= 10 or per_email >= 5:
                 raise APIError(429, "Too many code requests. Try again in an hour.", 3600)
-            db.execute("INSERT INTO mail_requests VALUES (?,?,?)", (email, self.client_address[0], now))
+            db.execute("INSERT INTO mail_requests VALUES (?,?,?)", (email, address, now))
             user = db.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
             should_send = mode == "signup" or user is not None
             if should_send:
@@ -519,6 +534,7 @@ def create_server(port, database, events_file, public_origin=None, dev_mail=Fals
     server.database, server.events_file = database, events_file
     server.public_origin = origin.rstrip("/")
     server.dev_mail = dev_mail
+    server.trusted_proxy_token = os.environ.get('TRUSTED_PROXY_TOKEN', '')
     server.outbox = outbox or database.parent / "dev-mail"
     actual_port = server.server_address[1]
     server.allowed_origins = {server.public_origin} if public_origin else {f"http://localhost:{actual_port}", f"http://127.0.0.1:{actual_port}"}
@@ -539,6 +555,9 @@ def create_server(port, database, events_file, public_origin=None, dev_mail=Fals
 
 
 if __name__ == "__main__":
+    def stop_server(_signal, _frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, stop_server)
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument('--bind', default='127.0.0.1', help='Use 0.0.0.0 inside a private production container')

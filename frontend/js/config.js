@@ -22,6 +22,8 @@ window.KT = window.KT || {};
   if (forced && DEPLOYMENTS[forced] && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) deployment = DEPLOYMENTS[forced];
 
   window.KT.CONFIG = {
+    // Vercel mounts at /; the local Python server mounts at /frontend/.
+    APP_BASE: new URL('../', document.currentScript.src).pathname,
     DEPLOYMENT: deployment.name,
     API_BASE: deployment.API_BASE,
     SIGHTINGS_API: deployment.SIGHTINGS_API,

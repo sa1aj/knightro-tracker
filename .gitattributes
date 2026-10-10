@@ -1,0 +1,2 @@
+deploy/aws/*.sh text eol=lf
+frontend/api/*.mjs text eol=lf

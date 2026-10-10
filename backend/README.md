@@ -28,7 +28,7 @@ One section per configured campus is randomly selected for the whole America/New
 
 Location signals are optional. Verified foreground openings resolve to a known building; presence stores only account/sector/time, never exact coordinates. At most one opening/account/minute contributes. Six distinct accounts in five minutes against at most two in the preceding window triggers an unconfirmed building hint. Records expire after ten minutes. Alert deduplication, a 15-minute global cooldown, and a one-hour sector cooldown limit noise. Upcoming likely appearances also generate hints based on listing text and official building matches.
 
-Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT with pywebpush installed. HTTPS and browser permission are required outside localhost. The service worker is scoped to /frontend/. Authenticated subscriptions are limited to five/account and recognized HTTPS browser push services.
+Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT with pywebpush installed. HTTPS and browser permission are required outside localhost. The service worker follows the frontend mount: `/` on Vercel or `/frontend/` locally. Authenticated subscriptions are limited to five/account and recognized HTTPS browser push services.
 
 Persistent push jobs are leased, retried with backoff up to five attempts, and discarded when alerts expire. 404/410 removes the subscription. Delivery is at least once after a worker crash; alert-specific notification tags collapse repeats. Changing the VAPID key requires resubscription. iPhone Web Push requires a supported Home Screen app.
 
@@ -38,4 +38,6 @@ admin.py holds the admin routes. Authorization is server-side only: a verified s
 
 ## Production
 
-Use one instance with durable SQLite/local block storage behind a hardened HTTPS proxy, edge limits, request timeouts, and PUBLIC_ORIGIN. Preserve public Host; do not trust arbitrary forwarded headers. The standard-library server is for development and must stay private in deployment. Before multiple replicas or serverless, move transactions and leases to shared storage and photos to object storage. See [AWS handoff](../docs/aws-deployment.md). The existing scraper Lambda and GitHub Pages do not deploy this application backend.
+Use one instance with durable SQLite/local block storage behind the HTTPS gateway in [the deployment guide](../deploy/README.md). Set `PUBLIC_ORIGIN` to the Vercel frontend origin; the gateway sets the corresponding Host. Origin checks and secure cookies remain enforced. Only a valid `X-Knightro-Proxy-Token` matching private `TRUSTED_PROXY_TOKEN` permits the server to use `X-Knightro-Client-IP` for its email request limiter. Arbitrary forwarded headers are ignored.
+
+Port 8000 stays private. Before multiple replicas or serverless, move transactions and leases to shared storage and photos to object storage. The existing event scraper does not deploy the account/photo/bounty backend.

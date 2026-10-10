@@ -1,5 +1,13 @@
 # Same-origin API
 
+## Vercel gateway boundary
+
+Production browser requests use `/api/*` on the Vercel frontend origin. The private function forwards cookies, original browser Origin, full JSON bodies, and upstream status/Set-Cookie headers. Caddy supplies the configured frontend Host. The application enforces verified sessions, single-use camera tokens, Origin checks, and cooldowns.
+
+`X-Knightro-Client-IP` is trusted only when `X-Knightro-Proxy-Token` matches private `TRUSTED_PROXY_TOKEN`. Vercel supplies the edge client address; arbitrary forwarded headers are ignored. Vercel app mode uses this API; the preserved GitHub Pages static mode separately uses the legacy anonymous AWS sightings endpoint and marks account services unavailable. See [deployment](../deploy/README.md).
+
+## Routes
+
 All times are Unix seconds. GET responses are no-store. POST requires application/json and the configured Origin. Session cookies are HttpOnly and scoped to /api. Errors return {"error":"message","retryAfter":null}; rate limits include Retry-After.
 
 - GET /healthz: read-only database probe.

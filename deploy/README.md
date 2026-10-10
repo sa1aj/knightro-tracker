@@ -1,4 +1,6 @@
-# AWS teammate setup
+# Legacy AWS teammate setup
+
+> **Legacy reference:** The live website now uses Vercel and Supabase. Follow [the current production setup](../supabase/README.md) for accounts, photos, database migrations, and manual event imports. These AWS/email-code instructions do not configure the current backend.
 
 Prepared from GitHub `sa1aj/knightro-tracker` main at `5386b95`, including its latest visual, campus zoom, animation, retry, and app/static mode updates. This package supplies the missing application deployment and connects the existing event scraper. It does not provision anything until an AWS operator runs it. Confirm the actual AWS inventory first: we have not inspected that account.
 

@@ -2,6 +2,12 @@
 
 Thanks for joining the team! Here's how to contribute:
 
+## Current backend and deployment
+
+Production is Vercel + Supabase. Start with [the repository overview](README.md) and [Supabase operations](supabase/README.md). Commit database migrations and Edge Function source alongside frontend changes. Vercel uses `frontend` as its project root. Event updates are manual imports of completed scraper databases; do not add a recurring scraper without an explicit project decision. Keep service keys, proxy/import tokens, `.env` files, and local databases out of Git.
+
+The Python/SQLite and AWS guides are legacy references for local development or an existing older installation.
+
 ## Workflow for Teammates
 
 ### 1. Create a Branch

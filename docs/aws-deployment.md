@@ -1,4 +1,6 @@
-# AWS deployment
+# Legacy AWS deployment
+
+> **Legacy reference:** The live website now uses Vercel and Supabase. Follow [the current production setup](../supabase/README.md) for accounts, photos, database migrations, and manual event imports. These AWS/email-code instructions do not configure the current backend.
 
 The stack, installer, secrets schema, Vercel configuration, scraper integration, and recovery instructions are in [deploy/README.md](../deploy/README.md). Local validation results are in [deploy/VALIDATION.md](../deploy/VALIDATION.md).
 

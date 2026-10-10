@@ -2,7 +2,7 @@
 
 Production project: `uetdvbrfqmjbusivudam` (`knightro`). The SQL migrations and three Edge Functions in this folder implement the hosted backend. The Python backend remains available for local development and the earlier AWS deployment.
 
-Live frontend: [Knightro Tracker](https://knightro-tracker-potatogigabyte.vercel.app/). Vercel project `knightro-tracker` (`prj_6PTNUZzrXdYYjXNVHBBVSPgf9Cec`) uses `frontend` as its source root and has the private Production environment variables configured. It was deployed directly from the local source because GitHub publication was blocked by the integration's repository write permissions. Connect Git to this project only after publishing these source changes.
+Live frontend: [Knightro Tracker](https://knightro-tracker-potatogigabyte.vercel.app/). Vercel project `knightro-tracker` (`prj_6PTNUZzrXdYYjXNVHBBVSPgf9Cec`) uses `frontend` as its source root and has the private Production environment variables configured. It was initially deployed directly from source. When connecting this Git repository to Vercel, deploy the version containing this Supabase backend and keep the private environment variables configured.
 
 ## Connect the existing Vercel site
 

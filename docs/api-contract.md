@@ -1,60 +1,58 @@
-# Same-origin API
+# Production API: Vercel and Supabase
 
-## Supabase deployment differences
+The live website uses same-origin `/api/*` requests. Vercel forwards requests to the private Supabase `knightro-api` Edge Function. [Supabase operations](../supabase/README.md) covers deployment and secrets. The previous email-code Python API is documented separately in [the legacy reference](legacy-python-api.md).
 
-The Supabase Edge backend preserves the application routes below, with password authentication in place of email codes:
+## Gateway and sessions
 
-- `POST /api/auth/signup`: `email`, `password` (12–128 characters), `displayName` (2–30 characters).
-- `POST /api/auth/login`: `email`, `password`.
-- `GET /api/auth/session` includes `authMode: "password"`, `emailDelivery: "disabled"`, and `emailVerified: false` on the user.
-- `POST /api/sightings` also requires a UUID `requestId` for idempotent retries. Published photos are compressed to at most 300 KB and retained for 24 hours.
-- Supabase admins are granted by account UUID in a private table. A UCF email domain is accepted without proving email ownership; verification and allowlist requirements below apply to the earlier Python backend.
-- Completed event snapshots are imported through the separate private `event-import` function. No scraper schedule is installed.
+The proxy forwards JSON bodies, cookies, the original browser Origin, and the Vercel client IP. It attaches the private `X-Knightro-Proxy-Token`; the Edge API checks it against Supabase Vault. Browser clients never receive the proxy token or Supabase service keys. Mutations require the configured canonical Origin and `application/json`.
 
-The Vercel proxy accepts either the earlier HTTPS backend origin or the Supabase function URL. See [Supabase operations](../supabase/README.md) for the deployment boundary and secret configuration.
+The backend uses Supabase password accounts and an opaque `kt_session` cookie: HttpOnly, Secure, SameSite=Lax, Path=/api, up to 14 days. Authorization is checked on every request. GET responses use `Cache-Control: no-store`. Times are Unix seconds. Errors contain `error`; cooldown and rate-limit errors also contain `retryAfter` and a Retry-After header.
 
-## Vercel gateway boundary
+## Accounts
 
-Production browser requests use `/api/*` on the Vercel frontend origin. The private function forwards cookies, original browser Origin, full JSON bodies, and upstream status/Set-Cookie headers. Caddy supplies the configured frontend Host. The application enforces verified sessions, single-use camera tokens, Origin checks, and cooldowns.
+- `POST /api/auth/signup`: `{email, password, displayName}`. Only `@ucf.edu` and `@knights.ucf.edu`; password 12–128 characters, display name 2–30 characters. Returns the signed-in session and sets the cookie.
+- `POST /api/auth/login`: `{email, password}`. Returns the session and sets the cookie.
+- `GET /api/auth/session`: `{user, nextSightingAt, cooldownSeconds:120, authMode:"password", emailDelivery:"disabled", accounts:true}`. A user includes `id`, `displayName`, `email`, `score`, and `emailVerified:false`; signed-out `user` is null.
+- `POST /api/auth/logout`: clears the app session and revokes this browser's provider session.
 
-`X-Knightro-Client-IP` is trusted only when `X-Knightro-Proxy-Token` matches private `TRUSTED_PROXY_TOKEN`. Vercel supplies the edge client address; arbitrary forwarded headers are ignored. Vercel app mode uses this API; the preserved GitHub Pages static mode separately uses the legacy anonymous AWS sightings endpoint and marks account services unavailable. See [deployment](../deploy/README.md).
+Email codes and email-based password recovery are disabled. An accepted UCF domain does not verify ownership or affiliation. `/auth/code`, `/auth/verify`, and the Python `/healthz` probe are not routes in this production backend.
 
-## Routes
+## Camera photos and sightings
 
-All times are Unix seconds. GET responses are no-store. POST requires application/json and the configured Origin. Session cookies are HttpOnly and scoped to /api. Errors return {"error":"message","retryAfter":null}; rate limits include Retry-After.
+- `POST /api/camera-session`: `{}`; signed-in account required. Returns `captureToken` and `expiresAt`, 120 seconds ahead. Replaces the previous capture token; the posting cooldown is enforced.
+- `POST /api/sightings`: `{requestId, lat, long, caption?, photo, captureToken}`. `requestId` is a UUID reused for retries of the same report; caption is at most 200 characters. `photo` is a JPEG data URL under 2 MB decoded, with dimensions at least 240 pixels, no side over 1600 pixels, and at most 2 megapixels. Photos are normalized to at most 800 pixels on their longer side and at most 300 KB. Requires a valid campus location and fresh capture token. Posting consumes the token, enforces a 120-second per-account cooldown, and awards points transactionally. Retake after an expired capture. Client-supplied points, time, building, and bounty claims are ignored.
+- Successful POST returns 201 with `sightingId`, coordinates, caption, timestamp, campus/building labels, status, points, eligiblePoints, bountyId or null, photoUrl, and nextSightingAt. A retry returns the existing report without awarding points twice. The first report per account inside a daily bounty earns two points; others earn one.
+- `GET /api/sightings`: `{sightings:[...]}` containing published and confirmed reports from the last 20 minutes.
+- `GET /api/photos/<report UUID>`: normalized JPEG through the API. Published/confirmed photos are readable; rejected photos require the owner or an administrator. Private objects are retained for 24 hours, then photoUrl becomes null; history and points remain.
+- `GET /api/my-reports`: signed-in account's latest 30 reports as `{reports:[...]}`.
+- `GET /api/leaderboard`: `{leaders:[{id,displayName,score}], period:"all-time"}`. Scores include published/confirmed reports and administrator adjustments; no other user's email is public.
 
-- GET /healthz: read-only database probe.
-- GET /api/auth/session: user (or null), nextSightingAt, cooldownSeconds, emailDelivery (development/smtp/unconfigured).
-- POST /api/auth/code: email, mode (signup/login), displayName for signup. Generic delivery acknowledgement and expiresIn; never a code.
-- POST /api/auth/verify: email and six-digit code. Rotates the session cookie.
-- POST /api/auth/logout: clears the current session.
-- POST /api/camera-session: empty object, verified account required and report cooldown enforced. Returns captureToken and expiresAt=server time+120 seconds. Replaces any earlier token for this account.
-- POST /api/sightings: lat, long, optional caption (max 200), photo (JPEG data URL, max 2 MB decoded), captureToken. Requires a verified session, campus location, valid JPEG, fresh account-bound token, and 120-second cooldown. Consumes the token in the same transaction as posting. Client points, time, building, and bounty claims are ignored. Returns 201 with the complete sighting: sightingId, lat, long, caption, timestamp, campus, nextSightingAt, status=published, points, eligiblePoints, bountyId or null, buildingId, buildingName, placeLabel, photoUrl. The first daily bounty report awards 2 points; subsequent reports in that section publish for 1 point.
-- GET /api/sightings: published, operator-confirmed, and legacy sightings from the last 20 minutes. Fields include sightingId, lat, long, caption, timestamp, campus, placeLabel, buildingId, status, points, photoUrl or null.
-- GET /api/photos/REPORT_ID: sanitized JPEG. Published/confirmed photos are public; removed photos require the owning account.
-- GET /api/my-reports: own latest 30 reports, status, points, eligiblePoints, timestamp, placeLabel. Requires a session.
-- GET /api/leaderboard: public displayName and score (sum of published/confirmed/legacy points), period=all-time. No emails.
-- GET /api/events: available, generatedAt, filter=likely-knightro, events. Appearance evidence plus a known building is required. Each includes eventId, title, description, location, startsAt, endsAt, lat, long, campus, buildingId, buildingName, probability, reason, hosts, url. Probability is a heuristic. Map hints appear within 30 minutes of the start.
-- GET /api/game: serverTime, active bounties, unexpired alerts. Each bounty includes bountyId, sectorId, sectorName, campus, buildingId/buildingName (section anchor), lat/long (section center), buildings=[{buildingId,name}], area=[[longitude,latitude],...], startsAt, expiresAt, multiplier=2. Eligibility uses the same area polygon drawn on the map. Starts/expiry are successive campus midnights in America/New_York (23/25 hours on daylight-saving transitions). Main sections contain five buildings; Downtown contains its two mapped buildings. Alerts include alertId, message, reason, campus, createdAt, expiresAt; no user locations.
-- POST /api/presence: opted-in foreground lat/long. Verified account required. Stores a sector and opening time, ages out in ten minutes. Off-campus returns 400; unknown sectors contribute nothing.
-- GET /api/push/config: enabled, publicKey or null.
-- POST /api/push/subscribe: browser Push API subscription with endpoint and keys.p256dh/auth. Verified accounts, recognized HTTPS push hosts, max five devices/account.
-- POST /api/push/unsubscribe: removes this account's subscription and queued jobs.
+Pins expire independently of photo retention. Image validation is not automated mascot recognition or proof that a modified client used a physical camera.
 
-## Admin routes (verified allowlisted accounts only)
+## Events, bounties, and hints
 
-Every route re-checks the session, the server-side `ADMIN_EMAILS` allowlist, and, except `/state` and `/mode`, that Admin Mode is on. Otherwise 401/403. POSTs follow the same Origin/JSON rules as above.
+- `GET /api/events`: classified event hints from the last manually imported completed scraper database, with `events`, `available`, `generatedAt`, `importedAt`, `stale`, and `filter:"likely-knightro"` when a feed exists. Ordinary meetings do not receive map pins. Each hint includes its event ID, title, description, location, start/end times, coordinates, building, campus, reason, hosts, and source URL. Likelihood is a heuristic. Map hints appear within 30 minutes of start.
+- `GET /api/game`: serverTime, active daily bounties, and unexpired alerts. Bounties include a sector polygon and startsAt/expiresAt at successive campus midnights in America/New_York. The server uses that same polygon for point eligibility. Main has curated sections; Downtown covers its two mapped academic buildings; Rosen currently earns standard points.
+- `POST /api/presence`: opted-in foreground `{lat,long}`. Signed-in account required; only account ID, resolved building ID, and time are retained for ten minutes. Unknown/off-campus building signals do not contribute. Six distinct openings can produce an unconfirmed Knight-Sense hint without exposing precise user coordinates.
+- `GET /api/push/config`: `{enabled,publicKey}`.
+- `POST /api/push/subscribe`: `{subscription:{endpoint,keys:{p256dh,auth}}}`. Signed-in account, recognized HTTPS browser push service, at most five subscriptions per account.
+- `POST /api/push/unsubscribe`: `{endpoint}`; removes this account's subscription and queued jobs.
 
-- GET /api/auth/session adds `admin: {allowed, mode, bypassCooldown}` only for allowlisted accounts, and `user.score` for everyone signed in.
-- GET /api/admin/state · POST /api/admin/mode {enabled}: switching off also clears the cooldown bypass.
-- POST /api/admin/cooldown {enabled}: bypass the 120-second cooldown for the admin's own account only.
-- GET /api/admin/users?q=: name/email search with current score.
-- POST /api/admin/points {userId, amount (int, ±1000, not 0), reason (3–140), requestId, confirm:true}: idempotent per requestId; a total can't go below 0.
-- GET /api/admin/test-events · POST /api/admin/test-events {title, description, startsAt, endsAt, lat, long, eventId?} (create or edit) · POST /api/admin/test-events/delete {eventId, confirm:true}.
-- GET /api/admin/test-sightings · POST /api/admin/test-sightings {lat, long, caption}: status `test`, 0 points, never public.
-- GET /api/admin/sightings (last 24 h, all statuses) · POST /api/admin/sightings/remove {sightingId, reason, confirm:true}: rejects a real report (points revoked) or deletes a test one.
-- POST /api/admin/test-data/clear {confirm:true} · GET /api/admin/log (latest 50 actions: who, what, when).
+Event ingestion uses the separate private `event-import` function with its own operator token. Browsers cannot import snapshots. The maintenance worker cleans up data and delivers notifications; no recurring scrape or import is configured.
 
-GET /api/leaderboard scores now include admin point adjustments.
+## Administrator routes
 
-JPEG validation establishes readable image evidence, not automated Knightro identification or cryptographic camera provenance. Optional operator rejection removes a report and its awarded points. The previous pending queue migrates once to published reports with stored eligible points and original expiry. Existing deployment endpoints remain unchanged.
+Only confirmed account UUIDs granted in `knightro.admins` have administrator access. These permissions are read on every call; neither an email domain nor client fields grant access. Tools also require Admin Mode, except state/mode routes.
+
+- `GET /api/auth/session` adds `admin:{allowed,mode,bypassCooldown}` for authorized accounts.
+- `GET /api/admin/state` and `POST /api/admin/mode {enabled}`. Turning the mode off clears cooldown bypass.
+- `POST /api/admin/cooldown {enabled}`: own-account cooldown bypass.
+- `GET /api/admin/users?q=`: account name/email search with scores, for admins in Admin Mode.
+- `POST /api/admin/points {userId,amount,reason,requestId,confirm:true}`: nonzero integer amount up to ±1000, reason 3–140 characters, idempotent request ID. Cannot reduce a score below zero.
+- `GET /api/admin/test-events`; `POST /api/admin/test-events {title,description,startsAt,endsAt,lat,long,eventId?}`; `POST /api/admin/test-events/delete {eventId,confirm:true}`.
+- `GET /api/admin/test-sightings`; `POST /api/admin/test-sightings {lat,long,caption}`. Test reports earn zero points and are excluded from public sightings/leaderboard.
+- `GET /api/admin/sightings`: recent reports of all statuses for moderation.
+- `POST /api/admin/sightings/remove {sightingId,reason,confirm:true}`: rejects the report and revokes its points.
+- `POST /api/admin/test-data/clear {confirm:true}` and `GET /api/admin/log`.
+
+Administrator mutations are audited and follow the same Origin, session, and JSON requirements as other writes.

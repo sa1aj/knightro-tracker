@@ -1,6 +1,6 @@
 # KnightConnect event scraper
 
-Collects all publicly listed **upcoming and ongoing events** from [KnightConnect](https://knightconnect.campuslabs.com/engage/events), then stores them in SQLite or PostgreSQL. Runs once and exits, so it works on a computer, a server, or a scheduled AWS container task.
+Collects all publicly listed **upcoming and ongoing events** from [KnightConnect](https://knightconnect.campuslabs.com/engage/events), then stores them in SQLite or PostgreSQL. Runs once and exits. The current production workflow is an operator-run scrape followed by a manual Supabase import; there is no recurring scraper.
 
 ## Current Supabase integration
 
@@ -41,7 +41,7 @@ python3 -m venv .venv
 
 This creates `events.db` in your current folder. A complete run takes several minutes. It waits one second between calendar downloads and retries transient HTTP errors with backoff. Avoid simultaneous SQLite runs against the same file.
 
-The download includes an `events.db` snapshot with 516 events collected on October 9, 2026. Run the scraper to refresh it; deleting or renaming the snapshot lets you start with a fresh database.
+An initial completed snapshot of 516 listings collected on October 9, 2026 was imported into Supabase. Local `events.db` files are excluded from Git; a fresh checkout needs an operator-provided completed database or a new scraper run.
 
 Optional commands (use your virtual environment's Python):
 
@@ -63,17 +63,23 @@ $env:DATABASE_URL = 'postgresql+psycopg://USER:URL_ENCODED_PASSWORD@HOST:5432/ev
 
 On macOS/Linux set the same variable with `export DATABASE_URL='…'`. The database must already exist; tables are created automatically. PostgreSQL runs use an advisory lock to prevent overlapping scrapes. Alternatively, set `DATABASE_HOST`, `DATABASE_PASSWORD`, and optionally `DATABASE_USER` / `DATABASE_NAME`; passwords in those separate variables do not need URL encoding. PostgreSQL connections in that mode require TLS.
 
-## Connect the tracker map
+## Connect the production tracker map
 
-After a successful SQLite scrape, run from the repository root:
+After a successful SQLite scrape, import the completed database from the repository root:
 
 ```powershell
-python scraper/export_events.py --database scraper/events.db
+$env:SUPABASE_URL = 'https://uetdvbrfqmjbusivudam.supabase.co'
+$env:KNIGHTRO_IMPORT_TOKEN = '<existing knightro_IMPORT_TOKEN from Supabase Vault>'
+python scraper/import_supabase.py --database scraper/events.db
 ```
 
-The exporter writes `frontend/data/events.json` atomically. The tracker application server reads it for `GET /api/events`, classifies likely appearances, and excludes ordinary meetings. Open the left menu → Campus events to browse the classified hints.
+The live website reads this stored feed through Supabase. The importer does not launch Chromium, and does not need the scraper's browser dependencies. Alternatively, with those variables configured, run `scrape_and_publish.py` from this folder to scrape once and import only if the full run succeeds. See [Supabase operations](../supabase/README.md).
 
-For PostgreSQL, `python scraper/export_events.py --from-env --output /data/events.json --bucket BUCKET` reads the existing scraper database environment and publishes the private `events/events.json` S3 object. The updated container runs `scrape_and_publish.py`: it exports only after a complete successful scrape, preserving the previous snapshot after failures or `--limit` runs. Set `EventsBucket` when updating the existing scraper stack to grant its runtime role access to that one object. See [the AWS operator guide](../deploy/README.md) before changing the deployed stack.
+### Legacy static-file and AWS publishing
+
+`python scraper/export_events.py --database scraper/events.db` writes `frontend/data/events.json` for the earlier Python backend or static compatibility site. Exporting that file alone does not update the live Supabase feed.
+
+The PostgreSQL/S3 exporter and `aws.yaml` remain for operators of the older deployment. See [the legacy AWS guide](../deploy/README.md) before changing an existing AWS stack. They are not required for current production.
 
 ## Database contents
 
@@ -128,7 +134,7 @@ The database persists in the named volume at `/data/events.db`. To use PostgreSQ
 docker run --rm --init --shm-size=1g -v knightconnect-data:/data knightconnect-scraper python scraper.py --limit 3
 ```
 
-## AWS deployment
+## Legacy AWS deployment (optional historical setup)
 
 `aws.yaml` is a CloudFormation template for **ECS Fargate + EventBridge Scheduler + private PostgreSQL RDS**. Browser scraping is packaged as a Linux container; Fargate lets a full run finish without Lambda's invocation time limit. Scheduling ECS tasks through EventBridge Scheduler is supported in the [AWS documentation](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/tasks-scheduled-eventbridge-scheduler.html).
 

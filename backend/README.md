@@ -1,4 +1,6 @@
-# Backend
+# Legacy Python/SQLite backend
+
+> **Legacy reference:** The live website now uses Vercel and Supabase. Follow [the current production setup](../supabase/README.md) for accounts, photos, database migrations, and manual event imports. These AWS/email-code instructions do not configure the current backend.
 
 Python 3.12+; install backend/requirements.txt. server.py serves the frontend and same-origin /api with transactional SQLite storage. A 15-second background loop rotates daily bounties and delivers push. It binds to loopback by default. Use --bind 0.0.0.0 only inside a private deployment behind an HTTPS proxy; --dev-mail requires loopback.
 

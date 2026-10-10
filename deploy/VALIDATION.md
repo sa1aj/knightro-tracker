@@ -1,4 +1,6 @@
-# Validation and release boundary
+# Legacy AWS deployment validation
+
+> **Legacy reference:** The live website now uses Vercel and Supabase. Follow [the current production setup](../supabase/README.md) for accounts, photos, database migrations, and manual event imports. These AWS/email-code instructions do not configure the current backend.
 
 Source baseline: GitHub `origin/main` at `5386b9568fc0bc394231fdc96c71bcb6f21d078f`, fetched before packaging on October 10, 2026. A new upstream update arrived during preparation; the branch was rebased onto it, preserving its visual, campus zoom, animation, retry, and static/app mode changes.
 

@@ -1,0 +1,23 @@
+project_id = "knightro-tracker"
+
+[auth]
+site_url = "https://knightro-tracker-frontend-teal.vercel.app"
+enable_signup = true
+minimum_password_length = 12
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# Each function verifies its own distinct, private caller secret before processing requests.
+[functions.knightro-api]
+verify_jwt = false
+entrypoint = "./functions/knightro-api/index.ts"
+
+[functions.event-import]
+verify_jwt = false
+entrypoint = "./functions/event-import/index.ts"
+
+[functions.knightro-worker]
+verify_jwt = false
+entrypoint = "./functions/knightro-worker/index.ts"

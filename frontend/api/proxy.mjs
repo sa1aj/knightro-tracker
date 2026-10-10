@@ -12,11 +12,12 @@ function reply(res, status, error) {
 export function upstreamURL(base, route, query = {}) {
   const url = new URL(base);
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash
-      || url.pathname !== '/' || (url.port && url.port !== '443')) throw new Error('Invalid backend origin');
+      || !['/','/functions/v1/knightro-api','/functions/v1/knightro-api/'].includes(url.pathname)
+      || (url.port && url.port !== '443')) throw new Error('Invalid backend origin');
   if (typeof route !== 'string' || !route || route.split('/').some(part => !/^[a-zA-Z0-9_-]+$/.test(part))) {
     throw new TypeError('Invalid API route');
   }
-  url.pathname = '/api/' + route;
+  url.pathname = url.pathname === '/' ? '/api/' + route : '/functions/v1/knightro-api/' + route;
   for (const [key, value] of Object.entries(query)) {
     if (key === 'route') continue;
     for (const item of Array.isArray(value) ? value : [value]) url.searchParams.append(key, String(item));

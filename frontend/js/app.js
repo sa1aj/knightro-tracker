@@ -291,6 +291,7 @@
     state.accounts = session.accounts !== false;
     state.user = session.user; state.nextSightingAt = session.nextSightingAt;
     state.sessionLoaded = true; state.emailDelivery = session.emailDelivery;
+    state.authMode = session.authMode || 'email-code';
     const wasOn = adminOn();
     state.admin = session.admin || null; // Display only; the server enforces every admin action.
     if (!adminOn()) { state.testSightings = []; state.testEvents = []; if (state.panel === 'admin') closePanel(); }
@@ -447,7 +448,8 @@
     sfx.play('click');
     render();
     try {
-      const res = await api.postSighting({ lat: r.pin.lat, long: r.pin.lng, caption: r.caption, photo:r.photo, captureToken:r.captureToken });
+      r.requestId = r.requestId || crypto.randomUUID();
+      const res = await api.postSighting({ requestId:r.requestId, lat: r.pin.lat, long: r.pin.lng, caption: r.caption, photo:r.photo, captureToken:r.captureToken });
       state.nextSightingAt = res.nextSightingAt;
       myPosts.add(res.sightingId);
       state.sightings = [res, ...state.sightings.filter(s => s.sightingId !== res.sightingId)];
@@ -532,6 +534,7 @@
       if (!r.camera) r.camera = window.KT.camera.create(capture => {
         if (state.report !== r) return;
         r.photo = capture?.photo || null; r.captureToken = capture?.captureToken || null;
+        r.requestId = null;
         r.captureExpiresAt = capture?.captureExpiresAt || 0; r.error = '';
         updateCooldown();
       });
@@ -669,7 +672,7 @@
       h('p', {}, state.user.email),
       h('p', {class:'small'}, 'Total points: ', h('strong', {}, String(state.user.score ?? 0))),
       state.admin?.allowed && h('p', {class:'msg warn'}, 'This account is authorized for Admin Mode. Use the ADMIN section of the menu.'),
-      h('p', {class:'msg'}, 'UCF email verified. Live photo reports earn points immediately; your first report in today’s bounty section earns double. Your email stays private.'),
+      h('p', {class:'msg'}, (state.authMode === 'password' ? 'Your UCF email address has not been verified. ' : 'UCF email verified. ') + 'Live photo reports earn points immediately; your first report in today’s bounty section earns double. Your email stays private.'),
       h('p', {id:'cooldown-note',class:'small'}),
       h('p', {class:'muted small'}, 'An essential sign-in cookie keeps this browser signed in for 14 days. Signing out removes it. No advertising cookies are used.'),
       h('button', {type:'button',class:'px-btn alt',onclick:async (event) => {
@@ -679,6 +682,7 @@
         catch (error) { button.disabled = false; fx.toast('SIGN OUT FAILED',error.message,'bad'); }
       }}, 'SIGN OUT'),
     ];
+    if (state.authMode === 'password') return passwordAccountView();
     const a = state.auth;
     const email = h('input', {id:'account-email',type:'email',autocomplete:'email',required:true,maxlength:254,placeholder:'you@ucf.edu',disabled:a.busy});
     email.value = a.email;
@@ -731,6 +735,42 @@
     ];
   }
   const eventTime = (value) => new Date(value * 1000).toLocaleString([], {timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  function passwordAccountView() {
+    const a = state.auth;
+    const email = h('input', {id:'account-email',type:'email',autocomplete:'email',required:true,maxlength:254,placeholder:'you@ucf.edu',disabled:a.busy});
+    email.value = a.email;
+    email.oninput = () => {a.email=email.value;};
+    const name = h('input', {id:'account-name',autocomplete:'nickname',required:true,minlength:2,maxlength:30,placeholder:'Your public Knight name',disabled:a.busy});
+    name.value = a.displayName;
+    name.oninput = () => {a.displayName=name.value;};
+    const password = h('input', {id:'account-password',type:'password',autocomplete:a.mode==='signup'?'new-password':'current-password',required:true,minlength:12,maxlength:128,disabled:a.busy});
+    const form = h('form', {class:'account-form',onsubmit:async event => {
+      event.preventDefault();
+      if(a.busy) return;
+      const secret = password.value;
+      password.value = ''; a.busy=true; a.error=''; render();
+      try {
+        const session = a.mode==='signup' ? await api.signup(a.email.trim(),secret,a.displayName.trim()) : await api.login(a.email.trim(),secret);
+        applySession(session);
+        fx.toast('WELCOME, KNIGHT','Your account is ready.','good');
+        const next=a.after;a.after=null;
+        if(next) {closePanel();openPanel(next);}
+      } catch(error) {a.error=error.message;}
+      finally {a.busy=false;if(state.panel==='account') render();}
+    }},
+      h('div',{class:'field'},h('label',{for:'account-email'},'UCF EMAIL'),email),
+      a.mode==='signup'&&h('div',{class:'field'},h('label',{for:'account-name'},'PUBLIC DISPLAY NAME'),name),
+      h('div',{class:'field'},h('label',{for:'account-password'},'PASSWORD · 12+ CHARACTERS'),password),
+      h('div',{class:'msg err',role:'alert',hidden:!a.error},a.error),
+      h('button',{type:'submit',class:'px-btn',disabled:a.busy},a.busy?'PLEASE WAIT…':a.mode==='signup'?'CREATE ACCOUNT':'SIGN IN'));
+    return [
+      h('h3',{},a.mode==='signup'?'JOIN THE KNIGHT WATCH':'WELCOME BACK'),
+      h('p',{class:'small'},'Use an @ucf.edu or @knights.ucf.edu address and a password. Email ownership is not verified yet.'),
+      form,
+      h('button',{type:'button',class:'px-btn alt',disabled:a.busy,onclick:()=>{a.mode=a.mode==='signup'?'login':'signup';a.error='';render();}},a.mode==='signup'?'ALREADY A KNIGHT? SIGN IN':'CREATE AN ACCOUNT'),
+      h('p',{class:'muted small'},'Signing in uses an essential cookie for up to 14 days. Keep your password safe; email password recovery is not available yet.'),
+    ];
+  }
   function resolveEvent(event) {
     return event; // The backend alone selects likely events and resolves their building sector.
   }
@@ -1009,7 +1049,7 @@
     $('#btn-retry').hidden = !state.netError;
     $('#status').classList.toggle('bad', !!state.netError);
     $('#account-label').textContent = state.user ? state.user.displayName : 'Sign in / create account';
-    $('#account-sub').textContent = !CONFIG.ACCOUNTS ? 'Needs the app server' : state.user ? (state.user.score ?? 0) + ' pts · account & sign out' : 'UCF email · no password';
+    $('#account-sub').textContent = !CONFIG.ACCOUNTS ? 'Needs the app server' : state.user ? (state.user.score ?? 0) + ' pts · account & sign out' : state.authMode === 'password' ? 'UCF email · password' : 'UCF email · no password';
     document.querySelectorAll('.navigation [data-panel]').forEach((b) => b.toggleAttribute('aria-current', b.dataset.panel === state.panel));
     const allowed = !!(state.admin && state.admin.allowed);
     $('#nav-admin').hidden = !allowed;

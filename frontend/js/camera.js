@@ -49,10 +49,10 @@
         if (Math.min(width, height) < 240 || video.readyState < 2) throw new Error('Camera is still warming up. Try again.');
         const permit = await window.KT.api.cameraSession();
         if (disposed || !stream) return;
-        const canvas = document.createElement('canvas'), scale = Math.min(1, 1400 / Math.max(width, height));
+        const canvas = document.createElement('canvas'), scale = Math.min(1, 800 / Math.max(width, height));
         canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
         canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        const photo = canvas.toDataURL('image/jpeg', .85);
+        const photo = canvas.toDataURL('image/jpeg', .7);
         preview.src = photo; preview.hidden = false; video.hidden = true; captured = true;
         stop();
         status.textContent = 'Photo ready. Submit within two minutes, or retake it.';

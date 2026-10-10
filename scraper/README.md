@@ -2,6 +2,12 @@
 
 Collects all publicly listed **upcoming and ongoing events** from [KnightConnect](https://knightconnect.campuslabs.com/engage/events), then stores them in SQLite or PostgreSQL. Runs once and exits, so it works on a computer, a server, or a scheduled AWS container task.
 
+## Current Supabase integration
+
+Production uses a **manual** database import with no recurring scrape. After someone completes a scraper run, `import_supabase.py --database events.db` uploads that completed SQLite snapshot to the private Supabase importer. This command does not browse KnightConnect. Set `SUPABASE_URL` and `KNIGHTRO_IMPORT_TOKEN` in the operator's environment; see [Supabase operations](../supabase/README.md) for the commands and Vault secret names.
+
+`scrape_and_publish.py` runs the scraper once and imports the resulting database when those variables are set. Failed or limited runs never replace the live feed. The AWS scheduling instructions later in this document describe the older optional deployment; no such scraper schedule is created by the Supabase setup.
+
 ## How it collects events
 
 1. Opens the public event listing in headless Chromium and clicks **Load More** until the displayed count matches the total. This avoids the one-week limit of the site's main RSS/iCal feed.

@@ -2,6 +2,12 @@
 
 Live UCF sightings, daily section bounties, and Knight-Sense building hints in the original black-and-gold pixel theme.
 
+## Supabase production backend
+
+The hosted backend now uses Supabase Auth, private Postgres data, private photo storage, and Edge Functions. See [Supabase deployment and operations](supabase/README.md) for the Vercel connection, password accounts without email codes, administrator setup, and manual event database imports. The scraper runs only when an operator starts it; Supabase serves its last imported snapshot.
+
+Supabase accounts are restricted to UCF email domains but **email ownership is unverified**. The verified-email and email-admin-allowlist instructions below describe the earlier Python/AWS backend. Supabase administrators are granted by confirmed account UUID instead.
+
 ## Vercel and AWS deployment
 
 The complete operator guide is [deploy/README.md](deploy/README.md). It includes an application CloudFormation stack, HTTPS gateway, private secrets, persistent storage, backups, and the connection to the existing scraper.

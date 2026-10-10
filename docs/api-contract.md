@@ -1,5 +1,18 @@
 # Same-origin API
 
+## Supabase deployment differences
+
+The Supabase Edge backend preserves the application routes below, with password authentication in place of email codes:
+
+- `POST /api/auth/signup`: `email`, `password` (12–128 characters), `displayName` (2–30 characters).
+- `POST /api/auth/login`: `email`, `password`.
+- `GET /api/auth/session` includes `authMode: "password"`, `emailDelivery: "disabled"`, and `emailVerified: false` on the user.
+- `POST /api/sightings` also requires a UUID `requestId` for idempotent retries. Published photos are compressed to at most 300 KB and retained for 24 hours.
+- Supabase admins are granted by account UUID in a private table. A UCF email domain is accepted without proving email ownership; verification and allowlist requirements below apply to the earlier Python backend.
+- Completed event snapshots are imported through the separate private `event-import` function. No scraper schedule is installed.
+
+The Vercel proxy accepts either the earlier HTTPS backend origin or the Supabase function URL. See [Supabase operations](../supabase/README.md) for the deployment boundary and secret configuration.
+
 ## Vercel gateway boundary
 
 Production browser requests use `/api/*` on the Vercel frontend origin. The private function forwards cookies, original browser Origin, full JSON bodies, and upstream status/Set-Cookie headers. Caddy supplies the configured frontend Host. The application enforces verified sessions, single-use camera tokens, Origin checks, and cooldowns.

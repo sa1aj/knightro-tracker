@@ -29,3 +29,7 @@ backend/.data/
 *.db-wal
 frontend/data/events.json
 artifacts/
+supabase/.temp/
+supabase/.branches/
+.vercel/
+.deno-cache/

@@ -15,8 +15,20 @@ def main():
     if any(arg == '--limit' or arg.startswith('--limit=') for arg in sys.argv[1:]):
         print('Limited scraper check completed; production feed was not replaced.')
         return 0
+    if os.getenv('SUPABASE_URL'):
+        # Manual run only: scrape once, then import that completed database. No scheduler is added.
+        url = os.getenv('DATABASE_URL', 'sqlite:///events.db')
+        options = argparse.ArgumentParser(add_help=False)
+        options.add_argument('--database-url')
+        args, _ = options.parse_known_args(sys.argv[1:])
+        url = args.database_url or url
+        if not url.startswith('sqlite:///') or os.getenv('DATABASE_HOST'):
+            print('For the Supabase importer, use a SQLite scraper database and import_supabase.py.', file=sys.stderr)
+            return 1
+        script = Path(__file__).with_name('import_supabase.py')
+        return subprocess.run([sys.executable, str(script), '--database', url.removeprefix('sqlite:///')]).returncode
     if not os.getenv('EVENTS_BUCKET'):
-        print('Scrape completed. Set EVENTS_BUCKET to publish the application feed.')
+        print('Scrape completed. Run import_supabase.py to import this database into Supabase.')
         return 0
     try:
         output = Path(os.getenv('EVENTS_OUTPUT', '/data/events.json'))

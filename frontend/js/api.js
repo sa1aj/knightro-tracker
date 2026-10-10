@@ -71,6 +71,8 @@
       : app('/auth/session').then((s) => ({ ...s, accounts: true }))),
     requestCode: (email, displayName, mode) => app('/auth/code', { email, displayName, mode }),
     verifyCode: (email, code) => app('/auth/verify', { email, code }),
+    signup: (email, password, displayName) => app('/auth/signup', {email, password, displayName}),
+    login: (email, password) => app('/auth/login', {email, password}),
     logout: () => app('/auth/logout', {}),
     async getEvents() {
       if (!STATIC) return app('/events');

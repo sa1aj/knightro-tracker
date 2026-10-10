@@ -54,21 +54,14 @@
     .catch(() => { /* labels fall back to "On campus" when opened as a local file */ });
 
   function placeName(lat, long) {
-    let best = null, bestD = Infinity;
-    for (const b of buildings) {
-      const dy = (b.lat - lat) * 111320;
-      const dx = (b.long - long) * 111320 * Math.cos((lat * Math.PI) / 180);
-      const d = Math.hypot(dx, dy);
-      if (d < bestD) [best, bestD] = [b, d];
-    }
-    if (!best || bestD > 600) return campuses.find((c) => mapUtils.contains(c, {lat, lng: long}))?.name || 'On campus';
-    return `${bestD <= 80 ? 'At' : 'Near'} ${best.name}`;
+    return mapUtils.place(lat, long, buildings, campuses);
   }
   const onCampus = (p) => campuses.some((c) => mapUtils.contains(c, p));
   const campusBounds = (c) => [[c.bounds.minLat, c.bounds.minLng], [c.bounds.maxLat, c.bounds.maxLng]];
   const isMobile = () => matchMedia('(max-width: 720px)').matches;
 
   function photoFor(s) {
+    if (s.photoUrl?.startsWith('/api/photos/')) return {src:s.photoUrl,pixel:false};
     const list = CONFIG.STOCK_PHOTOS;
     if (list.length) return { src: list[hash(s.sightingId) % list.length], pixel: false };
     return { src: pixelPhoto(s.sightingId), pixel: true };
@@ -79,6 +72,7 @@
     sightings: [], events: [], eventsLoaded: false, eventsError: '', eventsGeneratedAt: null,
     user: null, nextSightingAt: 0, sessionLoaded: false, emailDelivery: null,
     leaders: [], leadersLoaded: false, leadersError: '', selectedEvent: null, stack: [],
+    bounties: [], alerts: [], gameLoaded: false, gameError: '', reports: [], reportsError: '', reportsLoaded: false, senseMessage: '',
     auth: { mode: 'signup', step: 'email', email: '', displayName: '', busy: false, error: '' },
     loaded: false,
     netError: '',
@@ -87,7 +81,7 @@
     selectedId: null,
     report: null,
   };
-  const newReport = () => ({ step: 'location', pin: null, gps: null, caption: '', submitting: false, error: '', result: null });
+  const newReport = () => ({ step: 'location', pin: null, gps: null, caption: '', photo:null, captureToken:null, captureExpiresAt:0, camera:null, submitting: false, error: '', result: null });
   const myPosts = new Set(); // ids this device just posted, so we don't announce them as "new"
 
   // ---------- map (created once, never replaced) ----------
@@ -110,18 +104,31 @@
   window.KT.map = map; // handy for debugging in dev tools
 
   const markers = new Map();
+  const bountyAreas = new Map();
   let dropPin = null;
 
   const campusSightings = () => state.sightings.filter((s) => mapUtils.contains(campus, {lat:s.lat, lng:s.long}));
   const activeEvents = () => state.events.filter((e) => e.endsAt > nowSec());
+  const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
-  const dropIcon = L.divIcon({ className: 'kt-drop', html: '<img src="' + CONFIG.PIN_IMAGE + '" alt="">', iconSize: [52, 58], iconAnchor: [26, 56] });
+  const dropIcon = L.divIcon({ className: 'kt-drop', html: '<img src="' + CONFIG.PIN_IMAGE + '" alt="">', iconSize: [66, 74], iconAnchor: [33, 72] });
 
   function renderMarkers() {
+    const sections = activeBounties().filter(b => b.campus === campus.id && Array.isArray(b.area));
+    const activeAreas = new Set(sections.map(b => b.bountyId));
+    for (const [id, area] of bountyAreas) if (!activeAreas.has(id)) { area.remove(); bountyAreas.delete(id); }
+    for (const b of sections) if (!bountyAreas.has(b.bountyId)) {
+      const area = L.polygon(b.area.map(([lng,lat]) => [lat,lng]), {
+        color:'#ffc904', weight:3, dashArray:'8 6', fillColor:'#ffc904', fillOpacity:.13,
+        interactive:false, className:'bounty-area',
+      }).addTo(map);
+      bountyAreas.set(b.bountyId, area);
+    }
     const items = [
       ...campusSightings().map((s) => ({ ...s, kind: 'sighting', key: 's:' + s.sightingId })),
-      ...activeEvents().filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
+      ...activeEvents().filter((e) => e.probability >= .8 && e.startsAt <= nowSec() + 1800 && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
         .map((e) => ({ ...e, kind:'event', key:'e:' + e.eventId })),
+      ...activeBounties().filter(b => b.campus === campus.id).map(b => ({...b,kind:'bounty',key:'b:'+b.bountyId})),
     ];
     const groups = mapUtils.cluster(items, (item) => map.latLngToLayerPoint([item.lat, item.long]));
     const seen = new Set();
@@ -149,15 +156,15 @@
       if (marker.signature !== signature) {
         const art = first.kind === 'sighting'
           ? '<img class="pin-normal" src="' + CONFIG.PIN_IMAGE + '" alt=""><img class="pin-hover" src="' + CONFIG.PIN_HOVER_IMAGE + '" alt="">'
-          : eventArt();
+          : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
         marker.setIcon(L.divIcon({
           className: 'kt-pin asset-pin ' + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (selected ? 'sel' : ''),
           html: '<div class="kt-pin-body">' + art + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
-          iconSize: [52, 58], iconAnchor: [26, 56],
+          iconSize: [66, 74], iconAnchor: [33, 72],
         }));
         marker.signature = signature;
       }
-      const label = multiple ? group.items.length + ' nearby sightings and events. Open stack.' : first.kind === 'sighting' ? 'Knightro sighting ' + placeName(first.lat, first.long) : first.title;
+      const label = multiple ? group.items.length + ' nearby sightings, event hints, and missions. Open stack.' : first.kind === 'sighting' ? 'Knightro sighting ' + (first.placeLabel || placeName(first.lat, first.long)) : first.kind === 'bounty' ? 'Daily double-point bounty: ' + first.sectorName : first.title;
       marker.getElement()?.setAttribute('aria-label', label);
       marker.getElement()?.setAttribute('title', label);
       marker.setZIndexOffset(selected ? 800 : first.kind === 'sighting' ? 500 : 0);
@@ -193,10 +200,10 @@
 
   function updatePinAges() {
     for (const marker of markers.values()) {
-      const opacity = Math.max(...marker.items.map((item) => item.kind === 'event' ? 1 : mapUtils.opacity(item.timestamp, nowSec(), CONFIG.ACTIVE_WINDOW_SEC)));
+      const opacity = Math.max(...marker.items.map((item) => item.kind !== 'sighting' ? 1 : mapUtils.opacity(item.timestamp, nowSec(), CONFIG.ACTIVE_WINDOW_SEC)));
       marker.setOpacity(opacity);
       const age = marker.getElement()?.querySelector('.age');
-      if (age) age.textContent = marker.items.length > 1 ? 'OPEN STACK' : marker.items[0].kind === 'event' ? 'EVENT' : shortAgo(marker.items[0]);
+      if (age) age.textContent = marker.items.length > 1 ? 'OPEN STACK' : marker.items[0].kind === 'bounty' ? 'BOUNTY ' + countdown(marker.items[0].expiresAt) : marker.items[0].kind === 'event' ? 'LIKELY EVENT' : shortAgo(marker.items[0]);
     }
   }
   function constrainCampus() {
@@ -298,17 +305,19 @@
 
   // ---------- panels ----------
   const TITLES = { report: 'REPORT A SIGHTING', recent: 'ACTIVE SIGHTINGS', detail: 'SIGHTING',
-    account:'YOUR UCF ACCOUNT', events:'CAMPUS EVENTS', event:'EVENT DETAILS', leaderboard:'KNIGHT LEADERBOARD', stack:'NEARBY PINS' };
+    account:'YOUR UCF ACCOUNT', events:'LIKELY KNIGHTRO EVENTS', event:'EVENT DETAILS', leaderboard:'KNIGHT LEADERBOARD', stack:'NEARBY PINS',
+    bounties:'HIGH-VALUE BOUNTIES', sense:'KNIGHT-SENSE', reports:'MY PHOTO REPORTS' };
 
   function openPanel(name, backTo = null) {
     setMenu(false);
-    if (name === 'report' && !state.user) { state.auth.after = 'report'; name = 'account'; }
+    if (['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
     if (name === 'report' && state.panel !== 'report' && state.nextSightingAt > nowSec()) {
       fx.toast('TAKE A BREATHER', 'Your next report unlocks in ' + Math.ceil(state.nextSightingAt - nowSec()) + ' seconds.', 'info');
       return;
     }
     if (state.panel === name && !['detail','stack','event'].includes(name)) return closePanel();
     sfx.play(state.panel ? 'switch' : 'open');
+    state.report?.camera?.dispose();
     state.report = name === 'report' ? newReport() : null;
     state.panel = name;
     state.backTo = backTo;
@@ -316,11 +325,14 @@
     if (name === 'report') locate();
     if (name === 'events') loadEvents();
     if (name === 'leaderboard') loadLeaderboard();
+    if (name === 'reports') loadReports();
+    if (['bounties','sense'].includes(name)) loadGame();
     $('#panel-close').focus({ preventScroll: true });
   }
   function closePanel() {
     if (!state.panel) return;
     sfx.play('close');
+    state.report?.camera?.dispose();
     state.panel = null;
     state.report = null;
     render();
@@ -382,23 +394,27 @@
 
   async function submitReport() {
     const r = state.report;
-    if (!r || r.submitting || !onCampus(r.pin)) return;
+    if (!r || r.submitting || !onCampus(r.pin) || !r.photo) return;
+    if (r.captureExpiresAt <= nowSec()) { r.camera?.expire(); updateCooldown(); return; }
     r.submitting = true;
     r.error = '';
     sfx.play('click');
     render();
     try {
-      const res = await api.postSighting({ lat: r.pin.lat, long: r.pin.lng, caption: r.caption });
+      const res = await api.postSighting({ lat: r.pin.lat, long: r.pin.lng, caption: r.caption, photo:r.photo, captureToken:r.captureToken });
       state.nextSightingAt = res.nextSightingAt;
-      if (state.report !== r) { refresh({quiet:true}); return; } // preserve cooldown if panel closed
       myPosts.add(res.sightingId);
+      state.sightings = [res, ...state.sightings.filter(s => s.sightingId !== res.sightingId)];
+      state.reportsLoaded = false; state.leadersLoaded = false;
+      if (state.report !== r) { refresh({quiet:true}); return; } // preserve cooldown if panel closed
+      r.camera?.dispose(); r.camera = null;
       r.result = res;
       r.step = 'done';
       sfx.play('success');
       const btn = $('#btn-report').getBoundingClientRect();
       fx.burst(btn.left + btn.width / 2, btn.top, 120);
       await refresh({ quiet: true });
-      fx.toast('SIGHTING POSTED!', 'Thanks, Knight! Everyone can see it for 20 minutes.', 'good');
+      fx.toast('SIGHTING POSTED!', '+' + res.points + ' point(s). Your pin is live in Recent Sightings.', 'good');
     } catch (err) {
       if (state.report !== r) return;
       r.error = err.message;
@@ -416,7 +432,7 @@
   function reportView(r) {
     const idx = r.step === 'location' ? 0 : 1;
     const steps = h('ol', { class: 'steps' },
-      [['location', 'LOCATION'], ['details', 'DETAILS']].map(([k, label], i) =>
+      [['location', 'LOCATION'], ['details', 'PHOTO PROOF']].map(([k, label], i) =>
         h('li', { class: i === idx ? 'on' : i < idx ? 'done' : '', 'aria-current': i === idx ? 'step' : null }, `${i + 1}. ${label}`)
       )
     );
@@ -429,6 +445,9 @@
         h('p', { class: 'small' }, 'Where did you see Knightro? Confirm the gold pin on the map. Drag it, or tap the map to move it.'),
         r.gps && h('div', { class: `msg${warn ? ' warn' : ''}${r.gps === 'locating' ? ' scanning' : ''}` }, GPS_MSG[r.gps]),
         r.pin && h('dl', { class: 'kv' }, h('dt', {}, 'PIN'), h('dd', {}, pinOk ? placeName(r.pin.lat, r.pin.lng) : 'Off campus. Move the pin onto Main, Rosen, or Downtown campus.')),
+        h('label', {class:'field'}, h('span', {class:'label'}, 'Jump to a building (optional)'), h('select', {id:'report-building', onchange:event => {
+          const b = buildings.find(b => b.id === event.target.value); if (b) { const c = campuses.find(c => c.id === b.campus); if (c && c.id !== campus.id) switchCampus(c.id); setPin({lat:b.lat,lng:b.long}); focusOn(b.lat,b.long); }
+        }}, h('option', {value:''}, 'Choose a campus building…'), ...buildings.filter(b => b.campus === campus.id).map(b => h('option', {value:b.id}, b.name)))),
         h('div', { class: 'actions' },
           h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => { sfx.play('click'); locate(); }, disabled: r.gps === 'locating' }, 'USE MY LOCATION'),
           r.pin && h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(r.pin.lat, r.pin.lng) }, 'SHOW PIN')
@@ -446,6 +465,13 @@
     }
 
     if (r.step === 'details') {
+      if (!r.camera) r.camera = window.KT.camera.create(capture => {
+        if (state.report !== r) return;
+        r.photo = capture?.photo || null; r.captureToken = capture?.captureToken || null;
+        r.captureExpiresAt = capture?.captureExpiresAt || 0; r.error = '';
+        updateCooldown();
+      });
+      r.camera.element.inert = r.submitting;
       const counter = h('span', { class: 'muted small counter' }, `${r.caption.length}/${CONFIG.CAPTION_MAX}`);
       const ta = h('textarea', { id: 'rep-caption', maxlength: CONFIG.CAPTION_MAX, placeholder: 'Knightro is near the Student Union' });
       ta.value = r.caption;
@@ -458,12 +484,13 @@
       return [
         steps,
         h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
+        r.camera.element,
         h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
-        h('p', { class: 'muted small' }, 'Your sighting appears on the map for everyone for 20 minutes. Your report earns one leaderboard point. Your email stays private.'),
+        h('p', { class: 'muted small' }, 'Live photos post immediately: 1 point, or 2 for your first daily bounty claim. Pins last 20 minutes.'),
         r.error && h('div', { class: 'msg err', role: 'alert' }, r.error),
         h('div', { class: 'panel-foot' },
-          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
-          h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting || state.nextSightingAt > nowSec(), onclick: submitReport }, r.submitting ? 'POSTING…' : 'POST SIGHTING')
+          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.camera?.dispose(); r.camera = null; r.photo = null; r.captureToken = null; r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
+          h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting || !r.photo || state.nextSightingAt > nowSec(), onclick: submitReport }, r.submitting ? 'POSTING…' : 'SUBMIT PHOTO')
         ),
       ];
     }
@@ -472,21 +499,16 @@
     return [
       h('div', { class: 'victory' }, h('img', { src: IMG.helm, alt: '' }), h('h3', {}, 'SIGHTING POSTED')),
       h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
-      h('div', { class: 'msg', role: 'status' }, 'Thanks! Your sighting is on the map for everyone for the next 20 minutes.'),
+      h('div', { class: 'msg', role: 'status' }, '+' + r.result.points + ' point(s) awarded. Your pin is live on the map and in Recent Sightings.'),
       h('div', { class: 'panel-foot' },
         h('button', { type: 'button', class: 'px-btn alt', onclick: closePanel }, 'CLOSE'),
         h('button', {
           type: 'button',
           class: 'px-btn',
           onclick: () => {
-            const id = r.result?.sightingId;
-            const s = state.sightings.find((x) => x.sightingId === id);
-            if (s) {
-              openDetail(s.sightingId);
-              focusOn(s.lat, s.long);
-            } else closePanel();
+            openDetail(r.result.sightingId, 'recent');
           },
-        }, 'VIEW ON MAP')
+        }, 'VIEW SIGHTING')
       ),
     ];
   }
@@ -523,8 +545,8 @@
     return [
       h('div', { class: 'label' }, s.sightingId === state.sightings[0].sightingId ? 'Latest sighting' : 'Sighting'),
       h('figure', { class: 'photo-fig' },
-        h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: 'Illustration of Knightro' }),
-        h('figcaption', { class: 'label' }, 'Stock image. Sighting photos are not uploaded yet.')
+        h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: s.photoUrl ? 'Reported Knightro sighting photo' : 'Illustration of Knightro' }),
+        h('figcaption', { class: 'label' }, s.photoUrl ? (s.status === 'confirmed' ? 'Photo confirmed' : 'Community photo report') + ' · ' + s.points + ' point(s)' : 'Legacy sighting · illustration')
       ),
       h('div', { class: `fresh-note ${fresh ? 'live' : 'old'}` },
         fresh ? `SPOTTED ${timeAgo(s).toUpperCase()}. HE MAY STILL BE NEARBY.` : `SEEN ${timeAgo(s).toUpperCase()}. HE MAY HAVE MOVED ON.`),
@@ -553,15 +575,15 @@
     if (label) label.textContent = remaining ? 'Next sighting available in ' + remaining + ' seconds.' : 'You can report a sighting now.';
     const submit = $('#rep-submit');
     if (submit && !state.report?.submitting) {
-      submit.disabled = remaining > 0;
-      submit.textContent = remaining ? 'WAIT ' + remaining + 's' : 'POST SIGHTING';
+      submit.disabled = remaining > 0 || !state.report?.photo || state.report.captureExpiresAt <= nowSec();
+      submit.textContent = remaining ? 'WAIT ' + remaining + 's' : 'SUBMIT PHOTO';
     }
   }
   function accountView() {
     if (state.user) return [
       h('h3', {}, 'WELCOME, ' + state.user.displayName.toUpperCase()),
       h('p', {}, state.user.email),
-      h('p', {class:'msg'}, 'UCF email verified. You earn one point for each sighting. Your email is never shown on the leaderboard.'),
+      h('p', {class:'msg'}, 'UCF email verified. Live photo reports earn points immediately; your first report in today’s bounty section earns double. Your email stays private.'),
       h('p', {id:'cooldown-note',class:'small'}),
       h('p', {class:'muted small'}, 'An essential sign-in cookie keeps this browser signed in for 14 days. Signing out removes it. No advertising cookies are used.'),
       h('button', {type:'button',class:'px-btn alt',onclick:async (event) => {
@@ -624,10 +646,7 @@
   }
   const eventTime = (value) => new Date(value * 1000).toLocaleString([], {timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   function resolveEvent(event) {
-    if (Number.isFinite(event.lat) && Number.isFinite(event.long)) return event;
-    const location = String(event.location || '').toLowerCase();
-    const building = buildings.find((b) => location.includes(b.name.toLowerCase()));
-    return building ? {...event,lat:building.lat,long:building.long} : event;
+    return event; // The backend alone selects likely events and resolves their building sector.
   }
   let eventsInFlight = false;
   async function loadEvents() {
@@ -648,6 +667,7 @@
   }
   function openMapItem(item) {
     if (item.kind === 'sighting') { openDetail(item.sightingId, state.panel === 'stack' ? 'stack' : null); }
+    else if (item.kind === 'bounty') { openPanel('bounties'); }
     else { state.selectedEvent = item.eventId; state.panel = 'event'; state.backTo = 'events'; render(); }
   }
   function eventRow(event) {
@@ -658,16 +678,17 @@
     }},
       h('strong',{},event.title),
       h('span',{class:'small'},eventTime(event.startsAt) + ' ET'),
-      h('span',{class:'muted small'},(event.location || 'Location to be announced') + (mapped ? '' : ' · No map pin')));
+      h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · No map pin')),
+      h('span',{class:'small hint-reason'},event.reason || 'Possible appearance'));
   }
   function eventsView() {
     if (!state.eventsLoaded) return [h('p',{},'Loading campus events…')];
     return [
-      h('p',{class:'small'},'Upcoming KnightConnect events across all campuses. Select an event for details.'),
+      h('p',{class:'small'},'Only events with evidence of a possible Knightro appearance. Pins appear within 30 minutes of the start. These are building-level hints, not confirmed sightings.'),
       state.eventsGeneratedAt && h('p',{class:'muted small'},'Last synced ' + eventTime(state.eventsGeneratedAt) + ' ET'),
       state.eventsError && h('div',{class:'msg err'},state.eventsError),
       ...activeEvents().map(eventRow),
-      !activeEvents().length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No upcoming events in the current feed.'),
+      !activeEvents().length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances in the current feed.'),
       h('button',{type:'button',class:'px-btn alt',onclick:loadEvents},'REFRESH EVENTS'),
     ];
   }
@@ -679,16 +700,17 @@
     return [
       h('div',{class:'event-hero'},CONFIG.EVENT_FRAMES.map((src,i) => h('img',{src,alt:'',class:'event-frame frame-' + i}))),
       h('h3',{},event.title), h('p',{},event.location || 'Location to be announced'),
+      h('p',{class:'msg'},event.reason + '. Knightro attendance is unconfirmed.'),
       h('dl',{class:'kv'},h('dt',{},'START'),h('dd',{},eventTime(event.startsAt) + ' ET'),h('dt',{},'END'),h('dd',{},eventTime(event.endsAt) + ' ET')),
       Array.isArray(event.hosts) && h('p',{class:'muted'},'Hosted by ' + event.hosts.join(', ')),
       safeUrl && h('a',{class:'px-btn',href:safeUrl,target:'_blank',rel:'noopener noreferrer'},'VIEW ON KNIGHTCONNECT'),
     ];
   }
   function stackView() {
-    const items = state.stack.filter((item) => item.kind === 'event' ? activeEvents().some((e) => e.eventId === item.eventId) : state.sightings.some((s) => s.sightingId === item.sightingId));
+    const items = state.stack.filter((item) => item.kind === 'event' ? activeEvents().some((e) => e.eventId === item.eventId) : item.kind === 'bounty' ? activeBounties().some(b => b.bountyId === item.bountyId) : state.sightings.some((s) => s.sightingId === item.sightingId));
     return [
       h('p',{class:'small'},items.length + ' pins in this area. Select one below, or zoom in to separate nearby pins.'),
-      ...items.map((item) => item.kind === 'event' ? eventRow(item) : h('button',{type:'button',class:'event-row',onclick:() => openDetail(item.sightingId,'stack')},
+      ...items.map((item) => item.kind === 'event' ? eventRow(item) : item.kind === 'bounty' ? bountyRow(item) : h('button',{type:'button',class:'event-row',onclick:() => openDetail(item.sightingId,'stack')},
         h('strong',{},'KNIGHTRO · ' + placeName(item.lat,item.long)),h('span',{},timeAgo(item)),item.caption && h('span',{class:'muted'},item.caption))),
     ];
   }
@@ -700,12 +722,107 @@
   function leaderboardView() {
     if (!state.leadersLoaded) return [h('p',{},'Loading the Knight leaderboard…')];
     return [
-      h('p',{class:'small'},'All-time campus spotters. Each accepted report earns one point.'),
+      h('p',{class:'small'},'All-time campus spotters. Live photo reports earn 1 point; the first daily bounty claim earns 2.'),
       state.leadersError && h('div',{class:'msg err'},state.leadersError),
       !state.leaders.length && h('p',{class:'msg'},'No sightings yet. Be the first Knight on the board!'),
       h('ol',{class:'leaderboard'},state.leaders.map((person) => h('li',{},h('span',{},person.displayName),h('strong',{},person.score + ' pts')))),
       h('button',{type:'button',class:'px-btn alt',onclick:loadLeaderboard},'REFRESH LEADERBOARD'),
     ];
+  }
+
+  // ---------- missions, coarse alerts, and photo review ----------
+  function countdown(expires) {
+    const seconds = Math.max(0, Math.ceil(expires - nowSec()));
+    return seconds >= 3600 ? Math.floor(seconds / 3600) + 'h ' + Math.floor(seconds % 3600 / 60) + 'm'
+      : Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+  }
+  let gameInFlight = false, alertsLoaded = false;
+  const seenAlerts = new Set();
+  async function loadGame() {
+    if (gameInFlight) return;
+    gameInFlight = true;
+    try {
+      const data = await api.getGame();
+      state.bounties = (data.bounties || []).filter(b => b.bountyId && Number.isFinite(b.expiresAt) && Number.isFinite(b.lat) && Number.isFinite(b.long));
+      state.alerts = (data.alerts || []).filter(a => a.expiresAt > nowSec());
+      for (const alert of state.alerts) {
+        if (alertsLoaded && !seenAlerts.has(alert.alertId)) fx.toast('KNIGHT-SENSE', alert.message, 'gold', 6000);
+        seenAlerts.add(alert.alertId);
+      }
+      alertsLoaded = true; state.gameError = '';
+    } catch (error) { state.gameError = error.message; }
+    finally {
+      state.gameLoaded = true; gameInFlight = false;
+      render({panel:['bounties','sense'].includes(state.panel)});
+    }
+  }
+  function paintMissions() {
+    const current = activeBounties().find(b => b.campus === campus.id);
+    $('#mission-bounty').textContent = current ? '⚡ 2× DAILY BOUNTY · ' + countdown(current.expiresAt) : '⚡ DAILY BOUNTIES';
+    const alert = state.alerts.find(a => a.expiresAt > nowSec());
+    $('#mission-sense').textContent = alert ? '◎ KNIGHT-SENSE · NEW HINT' : '◎ KNIGHT-SENSE';
+    $('#mission-sense').classList.toggle('has-alert', !!alert);
+  }
+  function bountyRow(b) {
+    return h('button', {type:'button',class:'bounty-card',onclick:() => {
+      if (state.panel !== 'bounties') openPanel('bounties');
+      if (b.campus !== campus.id) switchCampus(b.campus);
+      const bounds = L.latLngBounds(b.area.map(([lng,lat]) => [lat,lng]));
+      map.fitBounds(bounds, {paddingTopLeft:[24,150], paddingBottomRight:isMobile() ? [24,Math.ceil(innerHeight*.6)] : [$('#panel').offsetWidth + 50,100], maxZoom:17});
+    }}, h('strong', {class:'bounty-multiplier'}, '2×'), h('span', {}, h('strong',{},b.sectorName), h('span',{class:'small'}, b.buildings.length + ' BUILDINGS · UNTIL CAMPUS MIDNIGHT'),
+      h('span',{class:'small bounty-buildings'},b.buildings.map(item => item.name).join(' · '))),
+      h('b', {'data-expires':b.expiresAt,class:'bounty-clock'}, countdown(b.expiresAt)));
+  }
+  function bountiesView() {
+    const daily = activeBounties().filter(b => b.campus === campus.id);
+    return [
+      h('div',{class:'mission-intro'},h('span',{class:'eyebrow'},'TODAY’S CAMPUS CHALLENGE'),h('h3',{},'All day. Double points.'),h('p',{},'Spot Knightro in today’s shaded section' + (campus.id === 'main' ? ' across five buildings and their connecting paths.' : '.') + ' Resets at campus midnight.')),
+      h('p',{class:'msg'},'First bounty report: 2 points. Later reports: 1 point. The section is a challenge, not a guaranteed Knightro location.'),
+      state.gameError && h('p',{class:'msg err'},state.gameError),
+      ...daily.map(bountyRow),
+      !daily.length && h('p',{class:'muted'},campus.id === 'rosen' ? 'Daily bounties are available on Main and Downtown. Rosen sightings earn 1 point.' : state.gameLoaded ? 'Today’s bounty is being prepared. Checking again shortly.' : 'Checking current bounties…'),
+      campus.id === 'downtown' && h('p',{class:'small muted'},'This section covers Downtown’s two mapped academic buildings.'),
+      h('button',{type:'button',class:'px-btn',onclick:() => openPanel('report')},'SNAP A KNIGHTRO PHOTO'),
+    ];
+  }
+  function senseView() {
+    return [
+      h('div',{class:'mission-intro'},h('span',{class:'eyebrow'},'TRUST YOUR KNIGHT-SENSE'),h('h3',{},'A hint. A building. A head start.'),h('p',{},'A sudden cluster of verified app openings or an upcoming likely mascot event can trigger a campus-wide alert. Hints name a building and never reveal users’ exact locations.')),
+      state.gameError && h('p',{class:'msg err'},state.gameError),
+      ...state.alerts.filter(a => a.expiresAt > nowSec()).map(a => h('article',{class:'sense-card'},h('strong',{},a.message),h('p',{class:'small muted'},a.reason + ' · Unconfirmed hint'),h('span',{'data-expires':a.expiresAt,class:'small'},countdown(a.expiresAt)))),
+      !state.alerts.some(a => a.expiresAt > nowSec()) && h('p',{class:'msg'},'All quiet. Keep an eye on the map for the next signal.'),
+      h('button',{type:'button',class:'px-btn',onclick:async () => {
+        if (!state.user) return openPanel('account');
+        try { state.senseMessage = await window.KT.sense.enable(); } catch (error) { state.senseMessage = error.message; }
+        if (state.panel === 'sense') render();
+      }},'ENABLE PUSH ALERTS'),
+      h('button',{type:'button',class:'px-btn alt',onclick:async () => {
+        if (!state.user) return openPanel('account');
+        try { state.senseMessage = await window.KT.sense.disable(); } catch (error) { state.senseMessage = error.message; }
+        if (state.panel === 'sense') render();
+      }},'DISABLE PUSH ON THIS DEVICE'),
+      h('p',{class:'small muted'},'Optional: contribute a location signal when you open the app. The server retains only your building sector and account ID for up to 10 minutes. You can turn this off anytime.'),
+      h('button',{type:'button',class:'px-btn alt',onclick:async () => {
+        if (!state.user) return openPanel('account');
+        const on = !window.KT.sense.presenceEnabled(); window.KT.sense.setPresence(on);
+        state.senseMessage = on ? 'Location signals enabled when you open the app. Allow location access when prompted.' : 'Location signals disabled on this device.';
+        render(); if (on) await window.KT.sense.presence(state.user, true);
+      }}, window.KT.sense.presenceEnabled() ? 'TURN OFF LOCATION SIGNALS' : 'OPT IN TO LOCATION SIGNALS'),
+      state.senseMessage && h('p',{class:'msg',role:'status'},state.senseMessage),
+      h('p',{class:'small muted'},'Push needs browser permission and server VAPID configuration. Supported iPhones require adding the site to the Home Screen.'),
+    ];
+  }
+  async function loadReports() {
+    try { state.reports = (await api.getReports()).reports; state.reportsError = ''; }
+    catch (error) { state.reportsError = error.message; }
+    finally { state.reportsLoaded = true; if (state.panel === 'reports') render(); }
+  }
+  function reportsView() {
+    return [h('p',{class:'small'},'Your live photo reports and awarded points. Reports appear immediately; removed reports earn no points.'),
+      state.reportsError && h('p',{class:'msg err'},state.reportsError),
+      ...state.reports.map(r => h('article',{class:'report-card'},h('strong',{},r.placeLabel),h('span',{class:'report-status '+r.status},r.status.toUpperCase()),h('span',{class:'small'},r.status === 'pending' ? r.eligiblePoints + ' point(s) eligible after confirmation' : r.points + ' point(s) awarded'))),
+      !state.reports.length && h('p',{class:'msg'},state.reportsLoaded ? 'No photo reports yet. Spot Knightro and take a photo.' : 'Loading your reports…'),
+      h('button',{type:'button',class:'px-btn alt',onclick:loadReports},'REFRESH REVIEW STATUS')];
   }
 
   // ---------- render ----------
@@ -725,7 +842,8 @@
       $('#panel-title').textContent = TITLES[state.panel];
       $('#panel-back').hidden = !(['detail','event'].includes(state.panel) && state.backTo);
       const views = {report: () => reportView(state.report), recent: recentView, detail: detailView,
-        account: accountView, events: eventsView, event: eventView, leaderboard: leaderboardView, stack: stackView};
+        account: accountView, events: eventsView, event: eventView, leaderboard: leaderboardView, stack: stackView,
+        bounties:bountiesView, sense:senseView, reports:reportsView};
       const view = views[state.panel]().filter(Boolean);
       const body = $('#panel-body');
       const scroll = body.scrollTop;
@@ -797,6 +915,7 @@
     $('#status').classList.toggle('bad', !!state.netError);
     $('#account-label').textContent = state.user ? '◇ ' + state.user.displayName : '◇ Sign in / create account';
     updateCooldown();
+    paintMissions();
   }
 
   // ---------- chrome ----------
@@ -840,16 +959,23 @@
   setTimeout(() => document.body.classList.remove('booting'), 2200);
 
   setInterval(() => {
+    if (state.report?.photo && !state.report.submitting && state.report.captureExpiresAt <= nowSec()) state.report.camera?.expire();
     const active = state.sightings.filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC);
     const expiredEvents = state.events.some((e) => e.endsAt <= nowSec());
-    if (active.length !== state.sightings.length || expiredEvents) {
-      state.sightings = active; state.events = activeEvents();
+    const expiredBounties = state.bounties.some(b => b.expiresAt <= nowSec());
+    if (active.length !== state.sightings.length || expiredEvents || expiredBounties) {
+      state.sightings = active; state.events = activeEvents(); state.bounties = activeBounties();
       render({panel: !['account','report'].includes(state.panel)});
     } else updatePinAges();
     updateCooldown();
+    paintMissions();
+    document.querySelectorAll('[data-expires]').forEach(el => el.textContent = countdown(Number(el.dataset.expires)));
   }, 1000);
   setInterval(() => { if (!document.hidden) loadEvents(); }, 60000);
   render();
   refresh();
   loadEvents();
+  loadGame();
+  setInterval(() => { if (!document.hidden) loadGame(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadGame(); window.KT.sense.presence(state.user); } });
 })();

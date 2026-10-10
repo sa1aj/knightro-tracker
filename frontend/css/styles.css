@@ -444,7 +444,7 @@ select:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 
 /* Original SVG pin artwork is layered so hover and keyboard focus use the second asset. */
 .asset-pin .kt-pin-body { filter: drop-shadow(2px 3px 0 #0009); }
-.leaflet-container .asset-pin img { position: absolute; inset: 0; width: 52px; height: 58px; object-fit: contain; image-rendering: auto; }
+.leaflet-container .asset-pin img { position: absolute; inset: 0; width: 66px; height: 74px; object-fit: contain; image-rendering: auto; }
 .asset-pin .pin-hover { opacity: 0; }
 .asset-pin:hover .pin-normal, .asset-pin:focus .pin-normal, .asset-pin.sel .pin-normal { opacity: 0; }
 .asset-pin:hover .pin-hover, .asset-pin:focus .pin-hover, .asset-pin.sel .pin-hover { opacity: 1; }

@@ -1,0 +1,38 @@
+/* Missions and the inline camera share the original pixel fonts, bezel, and hard shadows. */
+button { touch-action: manipulation; }
+.px-btn { min-height: 40px; }
+.kt-drop { display: grid; place-items: center; }
+.kt-drop img { width: 66px; height: 74px; object-fit: contain; image-rendering: pixelated; }
+.mission-bar { position: fixed; z-index: 610; left: 50%; top: 104px; transform: translateX(-50%); display: flex; gap: 12px; max-width: calc(100vw - 150px); }
+.mission-bar button { border: 0; border-radius: 0; padding: 9px 12px 7px; background: var(--ink); color: var(--gold); cursor: pointer; font: 10px var(--f-display); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--px-border), inset 0 -3px 0 var(--gold-lo), 4px 4px 0 #0008; }
+.mission-bar button:hover, .mission-bar button:focus-visible { background: var(--gold); color: var(--ink); }
+.mission-bar .has-alert { background: var(--gold); color: var(--ink); }
+body:has(.panel-shell.open) .mission-bar { left: calc((100vw - var(--panel-w) - 40px) / 2); max-width: calc(100vw - var(--panel-w) - 60px); }
+.bounty-art { display: grid; place-items: center; width: 54px; height: 54px; background: var(--gold); color: var(--ink); font: bold 22px var(--f-display); box-shadow: var(--px-border), inset -4px -4px 0 var(--gold-lo), inset 4px 4px 0 var(--gold-hi); }
+.mission-intro { display: grid; gap: 10px; border-top: 4px solid var(--gold); padding-top: 12px; }
+.eyebrow { font: 9px var(--f-display); letter-spacing: .06em; color: var(--gold); }
+.bounty-card { display: grid; grid-template-columns: 32px minmax(0,1fr); gap: 10px; align-items: start; text-align: left; width: 100%; padding: 12px; background: var(--screen-2); border: 2px solid var(--gold-lo); cursor: pointer; box-shadow: 4px 4px 0 #0007; }
+.bounty-card:hover { border-color: var(--gold); }
+.bounty-card > span { display: grid; gap: 7px; }
+.bounty-card strong:not(.bounty-multiplier) { color: var(--gold-hi); font: 11px var(--f-display); line-height: 1.6; }
+.bounty-card .small { color: var(--dim); }
+.bounty-buildings { line-height: 1.4; }
+.bounty-multiplier { color: var(--gold); font: bold 18px var(--f-display); }
+.bounty-clock { grid-column: 2; font: 11px var(--f-display); color: var(--gold); }
+.sense-card, .report-card { padding: 12px; border: 2px solid var(--line); border-left: 4px solid var(--gold); background: var(--screen-2); display: grid; gap: 8px; box-shadow: 4px 4px 0 #0005; }
+.sense-card strong { color: var(--gold-hi); font: 12px var(--f-display); line-height: 1.6; }
+.report-status { font: 10px var(--f-display); color: var(--warn); }
+.report-status.published, .report-status.confirmed { color: var(--ok); }
+.report-status.rejected { color: var(--bad); }
+.hint-reason { color: var(--gold-hi); }
+.sighting-camera { display: grid; gap: 10px; }
+.camera-viewport { position: relative; aspect-ratio: 4/3; background: var(--ink); border: 3px solid var(--ink); box-shadow: 0 0 0 2px var(--line); overflow: hidden; }
+.camera-viewport video, .camera-viewport img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; display: block; }
+.camera-actions { display: flex; }
+.camera-snap { width: 100%; }
+@media(max-width:720px) {
+  body:has(.panel-shell.open) .mission-bar { left: 50%; max-width: calc(100vw - 30px); }
+  .mission-bar { top: 96px; width: calc(100vw - 30px); max-width: calc(100vw - 30px); gap: 10px; }
+  .mission-bar button { flex: 1; min-width: 0; padding: 9px 7px; font-size: 8px; }
+  .camera-viewport { max-height: 200px; }
+}

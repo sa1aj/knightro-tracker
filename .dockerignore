@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+**/__pycache__
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/dev-mail
+**/node_modules
+scraper
+docs
+artifacts
+knightro-tracker
+checkout-note.txt

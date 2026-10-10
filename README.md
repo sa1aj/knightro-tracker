@@ -1,74 +1,66 @@
 # Knightro Tracker 🛡️
 
-Live Knightro sightings and KnightConnect events for UCF Main, Rosen, and Downtown campuses.
+Live UCF sightings, daily section bounties, and Knight-Sense building hints in the original black-and-gold pixel theme.
 
 ## Run locally
 
-Python 3.12+; no Python packages or frontend build required:
+Python 3.12+ and the backend dependencies:
 
 ```powershell
-python backend/server.py --port 8000
-```
-
-Open [Knightro Tracker](http://localhost:8000/frontend/). Stop an old `python -m http.server` process first, or use `--port 8001`.
-
-**Use the application server above.** A static file server or GitHub Pages alone cannot run the accounts, session cookies, leaderboard, or cooldown API. The frontend now calls same-origin `/api` routes; it does not call the old anonymous AWS endpoint.
-
-## Features
-
-- Pins fade continuously and expire 20 minutes after posting, even when polling fails.
-- Normal and hover Knightro SVG assets; nearby sightings/events stack with a count and a list that opens every pin, including identical coordinates.
-- Campus selector in the toggleable left menu. Each campus has its own restricted Leaflet viewport and location validation.
-- Verified @ucf.edu / @knights.ucf.edu accounts, passwordless email codes, 14-day session cookies, and sign-out.
-- Two-minute cooldown enforced atomically on the server for each account.
-- All-time leaderboard: one point per accepted sighting, public display names only.
-- Scraper event feed, event details, and a looping tween across the three supplied SVG frames.
-- Corner notifications and reduced-motion support.
-
-## Account email setup
-
-Set `SMTP_HOST`, `SMTP_FROM`, `SMTP_PORT` (default 587), and, if required, `SMTP_USER` and `SMTP_PASSWORD` in your server environment. SMTP uses STARTTLS with certificate verification. Credentials must not be committed.
-
-For local testing without sending email:
-
-```powershell
+python -m pip install -r backend/requirements.txt
 python backend/server.py --port 8001 --dev-mail
 ```
 
-This mode is labeled in the account UI. Verification codes are written to a `dev-mail` folder beside the database, **not emailed or returned through the API**. It is only available with the default local origin. The default database is `../knightro-tracker-data/knightro.db` relative to the repository; `--database` overrides it. Keep this directory private and outside any static file server root.
+Open http://127.0.0.1:8001/frontend/. The application server provides accounts, photo reports, bounties, and push delivery. The default database lives outside the repository at ../knightro-tracker-data/knightro.db; override with --database PATH. Development mail saves verification codes in dev-mail beside that database, never sends email, and is restricted to loopback.
+
+## Behavior
+
+- Larger 66×74 pins fade to 55% opacity and expire 20 minutes after submission.
+- Official UCF footprints and coordinates determine building labels on the server. Inside a footprint is At; outside, Near is limited to 120m. Distant points use the campus name.
+- Event hints require appearance evidence and a mapped building. Ordinary meetings receive no pins. Hints appear within 30 minutes of the start; attendance remains unconfirmed.
+- Main Campus has four curated sections of five neighboring buildings. One daily bounty shades the selected section, including connecting paths. Downtown uses its two mapped academic buildings; Rosen currently earns standard points. A new section is randomly selected at midnight America/New_York, persists across restarts, and lasts the whole campus day.
+- A user's first accepted photo report inside a daily bounty earns 2 points. Later reports earn 1 point and still appear normally, subject to the 120-second cooldown.
+- Photo capture sits inside the existing report panel. It uses the live camera only, with no gallery picker, newspaper overlay, export step, or extra modal. Retake replaces the photo; capture, leaving the form, and backgrounding stop the live stream.
+- A verified account obtains a single-use, two-minute camera session when snapping. Submit before that window expires or retake. Valid JPEG submissions publish immediately to the map, Recent Sightings, and the leaderboard, in one transaction.
+- Images are decoded, size-limited, normalized, and stripped of EXIF. These are community photo reports; automatic mascot recognition is not claimed. A browser cannot cryptographically prove physical camera capture; camera-only UI and short-lived tokens enforce the normal workflow.
+- Knight-Sense announces sudden clusters of six distinct verified app openings or likely mascot events starting within 15 minutes. Alerts name a building and do not reveal users' exact coordinates. Location signals are separately opt-in and retained only as account/sector/time for ten minutes.
+- Optional Web Push uses browser permission, VAPID, a scoped service worker, and a persistent retry outbox.
+
+## Existing reports and optional review
+
+The previous private pending-photo queue is removed. Migration publishes existing validated pending photos and awards their stored eligible points once, retaining original timestamps and pin expiry. Back up the database before release. Legacy scores remain intact.
+
+Operators can optionally review or remove reports:
+
+```powershell
+python backend/moderate.py --database PATH --export PRIVATE_REVIEW_DIRECTORY
+python backend/moderate.py --database PATH --sighting REPORT_ID --decision reject
+# --decision approve marks an operator-confirmed photo without awarding points twice.
+```
+
+Rejecting a report removes it from public sightings and the leaderboard and restricts its photo to its owner. Review is not required for posting or rewards.
+
+## Email and deployment
+
+Set SMTP_HOST, SMTP_FROM, SMTP_PORT, SMTP_SECURITY=starttls (587) or ssl (465), and SMTP_USER/SMTP_PASSWORD. TLS certificates are verified. See [backend setup](backend/README.md), [AWS handoff](docs/aws-deployment.md), and [API contract](docs/api-contract.md). Credentials are absent from the repository.
 
 ## Event feed
-
-After a successful SQLite scraper run:
 
 ```powershell
 python scraper/export_events.py --database scraper/events.db
 ```
 
-This atomically writes `frontend/data/events.json`, read by `GET /api/events`. The UI refreshes it every minute and removes ended events locally. Use `--output` and server `--events` for a feed outside the repository. Schedule this export after successful scraper runs if you want automatic updates.
-
-No event database is included in this checkout. Until an export is supplied, the app shows an honest empty-feed state. Events without coordinates appear in the list; a known building-name match can place them on the map. Events with unmapped locations never receive invented map positions. The exporter currently consumes the scraper's SQLite database; PostgreSQL export remains a separate deployment integration.
-
-## Campus configuration
-
-`frontend/data/campuses.json` is shared by frontend and server. Rectangular map limits are approximate navigation areas, not surveyed property boundaries. Rosen and Downtown centers use UCF's official location links:
-
-- [Main campus map](https://map.ucf.edu/)
-- [Rosen College location](https://www.ucf.edu/location/rosen-college-of-hospitality-management/)
-- [Downtown location](https://www.ucf.edu/location/downtown/)
-
-Adjust the bounds together in that file when campus coverage changes.
-
-## Deployment
-
-See [backend setup](backend/README.md) and [API contract](docs/api-contract.md). This change implements a local same-origin server and requires deployment work before replacing the existing AWS site. Existing AWS/DynamoDB sightings are not imported or modified.
+The export preserves descriptions for appearance classification. Use --output and server --events for an external feed. Until exported, the UI shows an empty-feed message. Existing AWS data is not imported or changed.
 
 ## Checks
 
 ```powershell
 python -m unittest discover -s backend -p "test_*.py" -v
-node --test frontend/tests/map-utils.test.cjs
+node --test frontend/tests/*.test.cjs
 node --check frontend/js/app.js
+node --check frontend/js/camera.js
+node --check frontend/js/knight-sense.js
+node --check frontend/sw.js
 ```
 
-The backend checks use disposable databases and development mail; they do not send real email or touch the live AWS API.
+Tests use disposable databases, synthetic photos, simulated camera streams, development mail, and mocked SMTP/Web Push. No real email or push is sent.

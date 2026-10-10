@@ -23,7 +23,13 @@
   --px-border: 0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink);
   --spring: cubic-bezier(0.2, 1.35, 0.35, 1);
   --pop: cubic-bezier(0.18, 1.6, 0.4, 1);
-  --dock-bottom: 74px;
+  /* Two-color depth: one light edge (top/left), one dark edge (bottom/right). Nothing else. */
+  --bevel-hi: var(--gold-hi);
+  --bevel-lo: var(--gold-lo);
+  --raise: inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo);
+  --frame: 16px;
+  --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dock-bottom: calc(var(--frame) + 62px);
   color-scheme: dark;
 }
 
@@ -51,19 +57,26 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 .leaflet-container .kt-pin img, .leaflet-container .kt-drop img { image-rendering: pixelated; }
 .leaflet-control-attribution { font-family: var(--f-body); font-size: 11px; background: rgba(244, 239, 226, 0.9) !important; color: var(--ink); }
 .leaflet-control-attribution a { color: var(--link); }
-.leaflet-bottom.leaflet-left { bottom: 14px; left: 14px; }
-.leaflet-bottom.leaflet-right { bottom: auto; top: 76px; right: 14px; } /* clear of the centered ticker */
-.leaflet-bar { border: 3px solid var(--ink) !important; border-radius: 0 !important; }
-.leaflet-bar a { background: var(--tile); color: var(--ink); font-family: var(--f-display); border-radius: 0 !important; transition: background 0.1s; }
-.leaflet-bar a:hover { background: var(--gold-hi); }
-.leaflet-bar a:active { transform: translateY(2px); }
+.leaflet-bottom.leaflet-left { bottom: calc(var(--frame) + 8px); left: calc(var(--frame) + 8px); }
+.leaflet-bottom.leaflet-right { bottom: auto; top: calc(var(--frame) + 62px); right: calc(var(--frame) + 8px); } /* clear of the centered ticker */
+/* Zoom in, zoom out and recenter share one raised control group. */
+.leaflet-bar { border: 3px solid var(--ink) !important; border-radius: 0 !important; box-shadow: 0 5px 0 var(--bevel-lo) !important; background: var(--ink); }
+.leaflet-bar a, .leaflet-bar a:hover, .leaflet-touch .leaflet-bar a {
+  width: 36px; height: 36px; line-height: 34px; display: grid; place-items: center;
+  background: var(--tile); color: var(--ink); font-family: var(--f-display); font-size: 20px; border-radius: 0 !important;
+  border-bottom: 2px solid var(--ink) !important; box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo);
+  transition: background 0.12s, transform 0.12s var(--ease-ui);
+}
+.leaflet-bar a:last-child { border-bottom: 0 !important; }
+.leaflet-bar a:hover { background: #fff; }
+.leaflet-bar a:active { transform: translateY(2px); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); }
+.leaflet-control-recenter svg { width: 18px; height: 18px; image-rendering: pixelated; }
+.leaflet-control-recenter.spin svg { animation: spin 0.5s var(--spring); }
 
 /* ---------- sighting pins ---------- */
 .kt-pin { display: grid; place-items: center; }
-.kt-pin-body { position: relative; width: 100%; height: 100%; transition: transform 0.18s var(--pop); }
-.kt-pin-inner { width: 100%; height: 100%; display: grid; place-items: center; background: var(--gold); box-shadow: var(--px-border); }
+.kt-pin-body { position: relative; width: 100%; height: 100%; }
 .kt-pin img { width: 24px; }
-.kt-pin:hover .kt-pin-body { transform: scale(1.18) translateY(-3px); }
 .kt-pin .age {
   position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px;
   font-family: var(--f-display); font-size: 9px; background: var(--ink); color: var(--phos); padding: 1px 4px; white-space: nowrap;
@@ -72,8 +85,6 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
   content: ''; position: absolute; inset: -9px; border: 3px solid var(--gold); pointer-events: none;
   animation: ping 1.6s steps(4) infinite;
 }
-.kt-pin.sel .kt-pin-inner { outline: 3px solid #fff; outline-offset: 5px; }
-.kt-pin.sel .kt-pin-body { animation: bob 0.9s ease-in-out infinite alternate; }
 .kt-pin.enter .kt-pin-body { animation: pinDrop 0.85s var(--d, 0ms) backwards; }
 .kt-pin.enter::after {
   content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px;
@@ -106,20 +117,30 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 }
 
 /* ================================================================ chrome over the map */
+/* Raised bezel: light outer top/left + dark outer bottom/right, gold face, then a reversed inner step
+   so the map reads as a recessed screen. Only --bevel-hi and --bevel-lo provide depth. */
 .frame {
   position: fixed; inset: 0; z-index: 400; pointer-events: none;
-  border: 6px solid var(--gold);
-  box-shadow: inset 0 0 0 3px var(--ink), inset 0 0 0 5px var(--gold-lo);
+  border: 4px solid; border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+}
+.frame::before { content: ''; position: absolute; inset: 0; border: calc(var(--frame) - 8px) solid var(--gold); }
+.frame::after {
+  content: ''; position: absolute; inset: calc(var(--frame) - 8px);
+  border: 4px solid; border-color: var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo);
+  box-shadow: inset 0 0 0 2px var(--ink);
 }
 .plaque {
-  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 600;
-  background: var(--ink); border: 4px solid var(--gold-lo); outline: 4px solid var(--ink); padding: 4px 14px 2px;
+  position: fixed; top: 4px; left: 50%; transform: translateX(-50%); z-index: 600;
+  background: var(--ink); border: 4px solid; border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+  outline: 3px solid var(--ink); padding: 6px 16px 4px;
   animation: plaqueDrop 0.7s var(--spring) 0.55s backwards;
 }
 .plaque h1 {
   margin: 0; display: flex; align-items: center; gap: 10px; white-space: nowrap;
   font-family: var(--f-display); font-weight: 700; font-size: clamp(15px, 2.6vw, 26px); letter-spacing: 0.06em;
-  color: var(--gold); text-shadow: 2px 2px 0 var(--gold-lo);
+  color: var(--gold);
+  /* Crisp extrusion: a light highlight up-left, a three-step dark side down-right. */
+  text-shadow: -1px -1px 0 var(--bevel-hi), 1px 1px 0 var(--bevel-lo), 2px 2px 0 var(--bevel-lo), 3px 3px 0 var(--bevel-lo);
 }
 .plaque img { width: clamp(24px, 3.4vw, 34px); animation: helmWiggle 4s ease-in-out 2s infinite; }
 @keyframes plaqueDrop { from { transform: translate(-50%, -180%); } to { transform: translate(-50%, 0); } }
@@ -127,17 +148,18 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 
 .tile {
   background: var(--tile); border: 0; cursor: pointer; display: grid; place-items: center; position: relative;
-  box-shadow: var(--px-border), inset -4px -4px 0 var(--tile-sh);
-  transition: transform 0.15s var(--pop), background 0.1s;
+  box-shadow: var(--px-border), var(--raise), 0 7px 0 var(--bevel-lo);
+  transition: transform 0.14s var(--ease-ui), box-shadow 0.14s var(--ease-ui), background 0.1s;
 }
-.tile:hover { background: #fff; transform: translateY(-3px); }
-.tile.press { animation: press 0.28s var(--pop); }
-@keyframes press { 0% { transform: scale(1); } 35% { transform: scale(0.86); } 100% { transform: scale(1); } }
+.tile:hover { background: #fff; transform: translateY(-2px); box-shadow: var(--px-border), var(--raise), 0 9px 0 var(--bevel-lo); }
+.tile:active { transform: translateY(4px); box-shadow: var(--px-border), inset 3px 3px 0 var(--bevel-lo), inset -3px -3px 0 var(--bevel-hi), 0 3px 0 var(--bevel-lo); }
+.tile.press { animation: press 0.26s var(--ease-ui); }
+@keyframes press { 0% { transform: translateY(0); } 40% { transform: translateY(4px); } 100% { transform: translateY(0); } }
 
-.corner { position: fixed; top: 16px; z-index: 600; width: 50px; height: 50px; animation: popIn 0.5s var(--pop) 0.85s backwards; }
+.corner { position: fixed; top: calc(var(--frame) + 8px); z-index: 830; width: 50px; height: 50px; animation: popIn 0.5s var(--pop) 0.85s backwards; }
 .corner img { width: 30px; transition: opacity 0.2s; }
-.corner.l { left: 18px; }
-.corner.r { right: 18px; animation-delay: 0.95s; }
+.corner.l { left: calc(var(--frame) + 8px); }
+.corner.r { right: calc(var(--frame) + 8px); animation-delay: 0.95s; }
 .corner.spin img { animation: spin 0.5s var(--spring); }
 .corner.pop { animation: press 0.3s var(--pop); }
 #btn-sound.muted img { opacity: 0.35; }
@@ -146,7 +168,7 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
 .status {
-  position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 500;
+  position: fixed; top: calc(var(--frame) + 50px); left: 50%; transform: translateX(-50%); z-index: 500;
   display: flex; align-items: center; gap: 8px;
   font-family: var(--f-display); font-size: 11px; letter-spacing: 0.08em; white-space: nowrap;
   background: rgba(12, 12, 14, 0.85); color: var(--ok); padding: 5px 10px 3px; box-shadow: 0 0 0 2px var(--line);
@@ -176,33 +198,24 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
   background: var(--gold); color: var(--ink);
   font-family: var(--f-display); font-weight: 700; font-size: 19px; letter-spacing: 0.08em;
   box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink),
-    inset 0 -6px 0 var(--gold-lo), inset 0 4px 0 var(--gold-hi), 0 10px 0 rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s var(--pop), background 0.15s, color 0.15s, box-shadow 0.15s;
-  animation: breathe 2.6s ease-in-out infinite;
+    inset 4px 4px 0 var(--bevel-hi), inset -4px -4px 0 var(--bevel-lo), 0 10px 0 var(--bevel-lo);
+  transition: transform 0.14s var(--ease-ui), background 0.14s, color 0.14s, box-shadow 0.14s var(--ease-ui);
 }
 .report-btn img { width: 30px; transition: transform 0.25s var(--pop); }
-.report-btn::after { /* light sweep across the button */
-  content: ''; position: absolute; top: 0; bottom: 0; width: 60px; left: -90px;
-  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.65), transparent);
-  transform: skewX(-20deg); animation: shine 3.6s ease-in-out 2s infinite;
-}
-.report-btn:hover { transform: translateY(-4px); background: var(--gold-hi); }
-.report-btn:hover img { transform: translateY(-4px) rotate(-10deg) scale(1.15); }
-.report-btn:active, .report-btn.press { transform: translateY(5px); }
-.report-btn.press { animation: press 0.28s var(--pop); }
-.report-btn.active { background: var(--screen); color: var(--gold); animation: none; box-shadow: 0 -4px 0 var(--gold), 0 4px 0 var(--gold), -4px 0 0 var(--gold), 4px 0 0 var(--gold), 0 10px 0 rgba(0, 0, 0, 0.35); }
-.report-btn.active::after { display: none; }
+.report-btn:hover { transform: translateY(-2px); background: var(--gold-hi); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink),
+    inset 4px 4px 0 var(--bevel-hi), inset -4px -4px 0 var(--bevel-lo), 0 12px 0 var(--bevel-lo); }
+.report-btn:hover img { transform: translateY(-3px) rotate(-8deg) scale(1.1); }
+.report-btn:active { transform: translateY(6px); box-shadow: 0 -4px 0 var(--ink), 0 4px 0 var(--ink), -4px 0 0 var(--ink), 4px 0 0 var(--ink),
+    inset 4px 4px 0 var(--bevel-lo), inset -4px -4px 0 var(--bevel-hi), 0 4px 0 var(--bevel-lo); }
+.report-btn.press { animation: press 0.26s var(--ease-ui); }
+.report-btn.active { background: var(--screen); color: var(--gold); }
 .report-btn.active img { animation: helmWiggle 1.4s ease-in-out infinite; }
-@keyframes breathe {
-  0%, 100% { filter: drop-shadow(0 0 0 rgba(255, 201, 4, 0)); }
-  50% { filter: drop-shadow(0 0 14px rgba(255, 201, 4, 0.75)); }
-}
-@keyframes shine { 0%, 70% { left: -90px; } 100% { left: calc(100% + 90px); } }
 
 .recent-btn { justify-self: start; width: 70px; height: 60px; gap: 2px; padding-top: 4px; }
 .recent-btn img { width: 26px; }
 .recent-btn span { font-family: var(--f-display); font-size: 10px; color: var(--ink); letter-spacing: 0.04em; }
 .recent-btn.active { background: var(--gold-hi); }
+.recent-btn { margin-bottom: 4px; }
 .badge {
   position: absolute; top: -10px; right: -10px; min-width: 22px; text-align: center; background: var(--gold); color: var(--ink);
   font-family: var(--f-display); font-size: 11px; padding: 2px 5px 1px; box-shadow: 0 0 0 3px var(--ink);
@@ -212,7 +225,7 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 
 /* ---------- message ticker, centered ---------- */
 .ticker {
-  position: fixed; bottom: 14px; left: 50%; z-index: 500;
+  position: fixed; bottom: calc(var(--frame) + 6px); left: 50%; z-index: 500;
   width: min(720px, calc(100vw - 140px)); min-height: 42px; transform: translateX(-50%);
   display: flex; align-items: center; justify-content: center; gap: 4px; text-align: center;
   background: var(--ink); border: 3px solid var(--gold-lo); padding: 8px 14px 6px;
@@ -275,27 +288,37 @@ button:focus-visible, textarea:focus-visible, .kt-pin:focus-visible { outline: 3
 @keyframes crtOff { 0%, 45% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
 
 /* ================================================================ panel */
+/* Overlay panel: fixed-position, so it never takes space from the map or moves other controls. It starts below
+   the mission buttons and ends above the dock, so it never covers them. */
 .panel-shell {
-  position: fixed; z-index: 800; right: 22px; top: 100px; bottom: 150px; width: min(var(--panel-w), calc(100vw - 60px));
-  display: flex; flex-direction: column;
-  background: var(--screen); border: 4px solid var(--gold); outline: 4px solid var(--ink); box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.45);
+  position: fixed; z-index: 800; right: calc(var(--frame) + 8px); top: calc(var(--frame) + 140px); bottom: calc(var(--dock-bottom) + 80px);
+  width: min(var(--panel-w), calc(100vw - 2 * var(--frame) - 40px));
+  display: flex; flex-direction: column; overscroll-behavior: contain; touch-action: pan-y;
+  background: var(--screen); border: 4px solid; border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+  outline: 3px solid var(--ink); box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.45);
   transform: translateX(calc(100% + 50px)) rotate(4deg); visibility: hidden;
   transition: transform 0.22s ease-in, visibility 0s linear 0.22s;
 }
 .panel-shell.open { transform: none; visibility: visible; transition: transform 0.45s var(--spring), visibility 0s; }
 .panel-shell.shake { animation: shakeX 0.4s; }
-.panel-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 2px solid var(--line); flex: none; }
-.panel-head h2 { flex: 1; margin: 0; font-family: var(--f-display); font-size: 16px; letter-spacing: 0.08em; color: var(--gold); }
+.panel-head {
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px 9px; flex: none;
+  background: var(--ink); border-bottom: 3px solid var(--bevel-lo); box-shadow: inset 0 3px 0 var(--bevel-hi);
+}
+.panel-head h2 { flex: 1; margin: 0; font-family: var(--f-display); font-size: 15px; letter-spacing: 0.08em; color: var(--gold);
+  text-shadow: 1px 1px 0 var(--bevel-lo), 2px 2px 0 var(--bevel-lo); }
 .panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px; display: grid; gap: 12px; align-content: start; }
 .panel-body.stagger > * { animation: itemIn 0.42s var(--spring) backwards; animation-delay: calc(var(--i, 0) * 50ms + 90ms); }
 .panel-body.stagger > .no-anim { animation: none; }
 @keyframes itemIn { from { opacity: 0; transform: translateX(28px) scale(0.96); } to { opacity: 1; transform: none; } }
 .x {
-  background: transparent; border: 2px solid var(--line); font-family: var(--f-display); font-size: 12px; padding: 4px 8px;
-  cursor: pointer; color: var(--phos); flex: none; transition: border-color 0.1s, transform 0.15s var(--pop);
+  background: var(--screen-2); border: 0; font-family: var(--f-display); font-size: 12px; padding: 6px 9px 5px; min-width: 34px; min-height: 32px;
+  cursor: pointer; color: var(--gold); flex: none; box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo);
+  transition: transform 0.15s var(--ease-ui), background 0.1s;
 }
-.x:hover { border-color: var(--gold); transform: scale(1.1); }
-#panel-close:hover { transform: rotate(90deg) scale(1.1); }
+.x:active { transform: translateY(2px); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); }
+.x:hover { background: #2b2f38; }
+#panel-close:hover { transform: rotate(90deg); }
 
 /* ---------- panel content ---------- */
 h3 { font-family: var(--f-display); font-size: 14px; letter-spacing: 0.05em; color: var(--phos); margin: 0; }
@@ -383,27 +406,35 @@ ol.steps li.done { color: var(--phos); }
 
 /* ================================================================ phones */
 @media (max-width: 720px) {
-  :root { --dock-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
-  .frame { border-width: 4px; }
-  .plaque { top: 6px; padding: 3px 10px 1px; }
-  .corner { top: 10px; width: 40px; height: 40px; }
+  :root { --frame: 12px; --dock-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .plaque { top: 3px; padding: 4px 10px 2px; }
+  .corner { top: calc(var(--frame) + 4px); width: 40px; height: 40px; }
   .corner img { width: 24px; }
-  .corner.l { left: 10px; }
-  .corner.r { right: 10px; }
+  .corner.l { left: calc(var(--frame) + 4px); }
+  .corner.r { right: calc(var(--frame) + 4px); }
   #btn-sound.muted::after { width: 26px; }
-  .status { top: 54px; }
+  .status { top: 48px; }
   .dock { gap: 10px; padding: 0 10px; }
   .report-btn { min-width: 0; width: calc(100vw - 170px); min-width: 190px; height: 54px; font-size: 14px; padding: 0 12px; gap: 8px; }
   .report-btn img { width: 22px; }
   .recent-btn { width: 58px; height: 54px; }
-  .ticker { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 24px); font-size: 11px; min-height: 40px; padding: 6px 10px 4px; }
-  .leaflet-bottom.leaflet-left { display: none; }
-  .leaflet-bottom.leaflet-right { top: 86px; right: 6px; }
+  .ticker { bottom: calc(var(--frame) + 2px + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 2 * var(--frame) - 8px); font-size: 11px; min-height: 40px; padding: 6px 10px 4px; }
+  /* Zoom + recenter: one horizontal group under the mission buttons, clear of the bottom sheet. */
+  .leaflet-bottom.leaflet-left { top: 122px; bottom: auto; left: calc(var(--frame) + 4px); }
+  .leaflet-control-zoom { display: flex; }
+  .leaflet-bar a, .leaflet-bar a:hover, .leaflet-touch .leaflet-bar a { width: 40px; height: 40px; line-height: 38px; }
+  .leaflet-bar a, .leaflet-bar a:hover { border-bottom: 0 !important; border-right: 2px solid var(--ink) !important; }
+  .leaflet-bar a:last-child { border-right: 0 !important; }
+  .leaflet-bottom.leaflet-right { top: auto; bottom: calc(var(--frame) + 52px + env(safe-area-inset-bottom, 0px)); right: calc(var(--frame) + 4px); }
+  /* Two lines at most, so a long caption can never push the ticker into the dock or attribution. */
+  .ticker #ticker-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .leaflet-control-attribution { font-size: 10px; }
+  /* Bottom sheet: sits between the controls above and the dock below, so nothing it covers is needed while open. */
   .panel-shell {
-    left: 6px; right: 6px; width: auto; top: auto;
-    bottom: calc(136px + env(safe-area-inset-bottom, 0px));
-    height: min(52dvh, calc(100dvh - 260px));
-    transform: translateY(calc(100% + 160px));
+    left: calc(var(--frame) - 6px); right: calc(var(--frame) - 6px); width: auto; top: auto;
+    bottom: calc(var(--dock-bottom) + 62px);
+    height: min(50dvh, calc(100dvh - 322px));
+    transform: translateY(calc(100% + 200px));
   }
   .panel-shell.open { transform: none; }
   .panel-body.stagger > * { animation-name: itemUp; }
@@ -416,18 +447,79 @@ ol.steps li.done { color: var(--phos); }
 }
 
 /* Campus navigation and quiet corner notifications. */
-#btn-menu { color: var(--ink); font-size: 27px; }
-.navigation {
-  position: fixed; z-index: 800; top: 82px; left: 18px; width: 270px;
-  max-height: calc(100dvh - 180px); overflow: auto;
-  background: var(--screen); border: 3px solid var(--gold); padding: 18px;
-  box-shadow: 7px 7px 0 #0008; display: grid; gap: 10px;
+/* ---------------------------------------------------------------- menu toggle: three bars morph into an X */
+.menu-toggle .bars { position: relative; width: 24px; height: 18px; display: block; }
+.menu-toggle .bars i {
+  position: absolute; left: 0; width: 100%; height: 4px; background: var(--ink);
+  transition: transform 240ms var(--ease-ui), opacity 160ms ease;
 }
-.navigation h2 { margin: 0 0 6px; font: 16px var(--f-display); color: var(--gold); }
-.navigation label { font: 10px var(--f-display); color: var(--dim); }
-.navigation button { text-align: left; background: var(--screen-2); border: 1px solid var(--line); padding: 10px; cursor: pointer; }
-.navigation button:hover, .navigation button:focus-visible { border-color: var(--gold); color: var(--gold); }
-.navigation p { font-size: 12px; color: var(--dim); }
+.menu-toggle .bars i:nth-child(1) { top: 0; }
+.menu-toggle .bars i:nth-child(2) { top: 7px; }
+.menu-toggle .bars i:nth-child(3) { top: 14px; }
+.menu-toggle.open { background: var(--gold-hi); }
+.menu-toggle.open .bars i:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.menu-toggle.open .bars i:nth-child(2) { opacity: 0; transform: scaleX(0.2); }
+.menu-toggle.open .bars i:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* ---------------------------------------------------------------- left menu: slides + fades over the map */
+.navigation {
+  position: fixed; z-index: 820; top: calc(var(--frame) + 66px); left: calc(var(--frame) + 8px); width: 300px;
+  max-height: calc(100dvh - var(--frame) - 66px - 170px); overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column;
+  background: var(--screen); border: 4px solid; border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+  outline: 3px solid var(--ink); box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.45);
+  transform-origin: 0 0; transform: translateX(-28px) scale(0.98); opacity: 0; visibility: hidden;
+  /* Closing: quick ease-in; visibility flips only after the slide finishes, so rapid toggles just reverse. */
+  transition: transform 200ms var(--ease-ui), opacity 180ms ease, visibility 0s linear 200ms;
+}
+.navigation.open {
+  transform: none; opacity: 1; visibility: visible;
+  transition: transform 260ms var(--ease-ui), opacity 200ms ease, visibility 0s;
+}
+.navigation > * { transition: transform 260ms var(--ease-ui), opacity 220ms ease; transform: translateX(-10px); opacity: 0; }
+.navigation.open > * { transform: none; opacity: 1; }
+.navigation.open > :nth-child(2) { transition-delay: 30ms; }
+.navigation.open > :nth-child(3) { transition-delay: 60ms; }
+.navigation.open > :nth-child(4) { transition-delay: 90ms; }
+.navigation.open > :nth-child(5) { transition-delay: 120ms; }
+.navigation.open > :nth-child(6) { transition-delay: 150ms; }
+.nav-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px 10px;
+  background: var(--gold); color: var(--ink); box-shadow: var(--raise); flex: none;
+}
+.nav-head h2 { margin: 0; font: 700 17px var(--f-display); letter-spacing: 0.06em; text-shadow: 1px 1px 0 var(--bevel-hi); }
+.nav-sub { font: 9px var(--f-display); letter-spacing: 0.14em; }
+.nav-badge { width: 40px; height: 40px; display: grid; place-items: center; background: var(--ink); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); flex: none; }
+.nav-badge img { width: 28px; image-rendering: pixelated; }
+.nav-group { display: grid; gap: 8px; padding: 12px 12px 14px; border-bottom: 3px solid var(--bevel-lo); box-shadow: 0 3px 0 var(--ink); }
+.nav-label { display: flex; align-items: center; gap: 8px; margin: 0; font: 10px var(--f-display); letter-spacing: 0.14em; color: var(--gold); }
+.nav-label::after { content: ''; flex: 1; height: 2px; background: var(--line); }
+.nav-select select { font-family: var(--f-display); font-size: 12px; box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); border: 0; padding: 11px 10px; }
+.nav-item {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  min-height: 52px; width: 100%; padding: 8px 10px; text-align: left; cursor: pointer;
+  background: var(--screen-2); color: var(--phos); border: 2px solid var(--line);
+  transition: transform 180ms var(--ease-ui), border-color 120ms ease, background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+.nav-item:hover, .nav-item:focus-visible { border-color: var(--gold); background: #262a33; transform: translateX(3px); }
+.nav-item:active { transform: translateX(3px) translateY(2px); }
+.nav-item[aria-current] { background: var(--gold); color: var(--ink); border-color: var(--ink); box-shadow: var(--raise); }
+.nav-item[aria-current] .nav-text small { color: var(--ink); }
+.nav-ico {
+  width: 32px; height: 32px; display: grid; place-items: center; font-size: 16px; color: var(--gold);
+  background: var(--ink); box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo);
+}
+.nav-text { display: grid; gap: 2px; font: 12px var(--f-display); letter-spacing: 0.04em; min-width: 0; overflow-wrap: anywhere; }
+.nav-text small { font: 13px var(--f-body); letter-spacing: 0; color: var(--dim); }
+.nav-foot { padding: 10px 14px; font: 9px var(--f-display); letter-spacing: 0.12em; color: var(--dim); text-align: center; }
+.nav-admin .nav-label { color: var(--warn); }
+.switch { width: 40px; height: 22px; position: relative; background: var(--ink); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); flex: none; }
+.switch::after {
+  content: ''; position: absolute; top: 4px; left: 4px; width: 14px; height: 14px; background: var(--dim);
+  transition: transform 200ms var(--ease-ui), background 120ms ease;
+}
+[aria-checked="true"] > .switch::after { transform: translateX(18px); background: var(--gold); }
+.nav-switch[aria-checked="true"] { border-color: var(--warn); }
 select, input {
   width: 100%; min-width: 0; background: var(--ink); color: var(--phos);
   border: 2px solid var(--line); border-radius: 0; font: 16px var(--f-body); padding: 10px;
@@ -442,14 +534,20 @@ select:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .toast span { font-size: 14px; }
 .toast::before { display: none; }
 
-/* Original SVG pin artwork is layered so hover and keyboard focus use the second asset. */
-.asset-pin .kt-pin-body { filter: drop-shadow(2px 3px 0 #0009); }
-.leaflet-container .asset-pin img { position: absolute; inset: 0; width: 66px; height: 74px; object-fit: contain; image-rendering: auto; }
-.asset-pin .pin-hover { opacity: 0; }
-.asset-pin:hover .pin-normal, .asset-pin:focus .pin-normal, .asset-pin.sel .pin-normal { opacity: 0; }
-.asset-pin:hover .pin-hover, .asset-pin:focus .pin-hover, .asset-pin.sel .pin-hover { opacity: 1; }
-.asset-pin .pin-normal, .asset-pin .pin-hover { transition: opacity 140ms ease; }
+/* One Knightro image for every state. Leaflet positions .kt-pin with transforms, so feedback only moves
+   the inner .kt-pin-body (hover/selected lift) and .pin-art (tap bounce). The anchor never shifts. */
+.asset-pin .kt-pin-body {
+  filter: drop-shadow(2px 3px 0 #0009); transform-origin: 50% 97%;
+  transition: transform 200ms var(--ease-ui);
+}
+.asset-pin:hover .kt-pin-body, .asset-pin:focus-visible .kt-pin-body { transform: translateY(-4px) scale(1.08); }
+.asset-pin.sel .kt-pin-body { transform: translateY(-3px) scale(1.06); }
+.pin-art { position: absolute; inset: 0; display: block; transform-origin: 50% 97%; }
+.pin-art.tap { animation: pinTap 380ms var(--ease-ui); }
+@keyframes pinTap { 0% { transform: scale(1); } 30% { transform: scale(0.9, 1.08); } 60% { transform: scale(1.1, 0.94); } 100% { transform: scale(1); } }
+.leaflet-container .asset-pin .pin-art img { position: absolute; inset: 0; width: 66px; height: 74px; object-fit: contain; image-rendering: auto; }
 .asset-pin .age { top: 100%; margin-top: 1px; font-size: 8px; }
+.test-pin .age { background: var(--warn); color: var(--ink); }
 .stack-count {
   position: absolute; right: -9px; top: -4px; min-width: 24px; min-height: 24px;
   padding: 3px 5px; background: var(--gold); color: var(--ink); border: 2px solid var(--ink);
@@ -472,7 +570,7 @@ select:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .leaderboard li strong { float: right; color: var(--gold); }
 a.px-btn { display: block; text-decoration: none; text-align: center; }
 @media (max-width:720px) {
-  .navigation { top: 62px; left: 10px; max-height: calc(100dvh - 150px); width: min(270px, calc(100vw - 20px)); }
+  .navigation { top: 62px; left: calc(var(--frame) + 4px); max-height: calc(100dvh - 62px - 150px); width: min(300px, calc(100vw - 2 * var(--frame) - 8px)); }
   .toasts { top: 110px; right: 14px; width: min(300px, calc(100vw - 28px)); }
   .plaque h1 { font-size: 14px; gap: 5px; }
   .plaque { padding-inline: 6px; }
@@ -481,4 +579,58 @@ a.px-btn { display: block; text-decoration: none; text-align: center; }
 @media (prefers-reduced-motion:reduce) {
   .event-frame { opacity: 0; }
   .event-frame.frame-0 { opacity: 1; }
+}
+
+/* ================================================================ admin panel (authorized accounts only) */
+.admin-banner {
+  display: grid; gap: 6px; padding: 12px; background: var(--ink); color: var(--warn);
+  box-shadow: inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo);
+}
+.admin-banner strong { font: 13px var(--f-display); letter-spacing: 0.1em; }
+.admin-banner .small { color: var(--phos); }
+.admin-banner .px-btn { justify-self: start; }
+.admin-sec { display: grid; gap: 10px; padding-top: 12px; border-top: 3px solid var(--bevel-lo); box-shadow: inset 0 3px 0 var(--ink); }
+.admin-sec-title { display: flex; align-items: center; gap: 8px; font: 11px var(--f-display); letter-spacing: 0.12em; color: var(--gold); }
+.admin-sec-title::after { content: ''; flex: 1; height: 2px; background: var(--line); }
+.admin-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.admin-row > * { flex: 1 1 120px; min-width: 0; }
+.admin-row > .px-btn { flex: 0 0 auto; }
+.admin-list { display: grid; gap: 6px; max-height: 200px; overflow: auto; }
+.admin-pick {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; text-align: left; cursor: pointer; padding: 8px 10px;
+  background: var(--screen-2); color: var(--phos); border: 2px solid var(--line); transition: border-color 120ms ease, transform 160ms var(--ease-ui);
+}
+.admin-pick:hover { border-color: var(--gold); transform: translateX(2px); }
+.admin-pick.on { border-color: var(--gold); background: #2a2614; }
+.admin-pick b { grid-row: span 2; align-self: center; color: var(--gold); font: 11px var(--f-display); }
+.admin-pick .small { overflow-wrap: anywhere; }
+.admin-card, .confirm-box { display: grid; gap: 10px; padding: 10px; background: var(--screen-2); border: 2px solid var(--line); }
+.confirm-box { border-color: var(--warn); }
+.admin-item { display: grid; gap: 8px; padding: 9px 10px; background: var(--screen-2); border: 2px solid var(--line); }
+.admin-item > span:first-child { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.admin-item small { color: var(--dim); font-size: 13px; }
+.admin-item.dim { opacity: 0.6; }
+.test-tag { display: inline-block; padding: 1px 5px; background: var(--warn); color: var(--ink); font: 9px var(--f-display); letter-spacing: 0.08em; }
+.admin-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 260px; overflow: auto; }
+.admin-log li { display: grid; gap: 2px; padding: 7px 9px; background: var(--screen-2); border-left: 3px solid var(--gold); font-size: 14px; overflow-wrap: anywhere; }
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; cursor: pointer; text-align: left;
+  background: var(--screen-2); color: var(--phos); border: 2px solid var(--line);
+}
+.switch-row span:first-child { display: grid; gap: 2px; }
+.switch-row strong { font: 11px var(--f-display); letter-spacing: 0.08em; }
+.switch-row small { color: var(--dim); }
+.switch-row[aria-checked="true"] { border-color: var(--warn); }
+.switch-row[aria-checked="true"] strong { color: var(--warn); }
+.px-btn.danger { background: var(--bad); box-shadow: var(--px-border), inset 2px 2px 0 #ffb3a8, inset -2px -2px 0 #a8392c; }
+.msg.ok { border-color: var(--ok); }
+body.admin-mode .plaque::after {
+  content: 'ADMIN'; position: absolute; right: -10px; bottom: -12px; padding: 1px 5px; background: var(--warn); color: var(--ink);
+  font: 9px var(--f-display); letter-spacing: 0.1em; box-shadow: 0 0 0 2px var(--ink);
+}
+
+@media (max-width: 360px) {
+  .plaque { padding-inline: 5px; }
+  .plaque h1 { font-size: 12px; gap: 4px; letter-spacing: 0.03em; }
+  .plaque img { width: 18px; }
 }

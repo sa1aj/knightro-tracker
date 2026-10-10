@@ -26,6 +26,21 @@ Open http://127.0.0.1:8001/frontend/. The application server provides accounts, 
 - Knight-Sense announces sudden clusters of six distinct verified app openings or likely mascot events starting within 15 minutes. Alerts name a building and do not reveal users' exact coordinates. Location signals are separately opt-in and retained only as account/sector/time for ten minutes.
 - Optional Web Push uses browser permission, VAPID, a scoped service worker, and a persistent retry outbox.
 
+## Admin Mode
+
+Authorized accounts get an **ADMIN** section in the menu with an Admin Mode switch and an admin panel:
+cooldown bypass (own account only), points add/deduct with a reason, test events, test sightings,
+sighting removal, one-click test-data cleanup, and an action history.
+
+- **Who is an admin:** a verified sign-in whose email is on the server-side allowlist `ADMIN_EMAILS`
+  (comma-separated). When unset it defaults to `jo822842@ucf.edu`. Nothing in the browser grants access.
+- **Enforcement:** every `/api/admin/*` call re-checks the session, the allowlist, and (for tools) that
+  Admin Mode is on. Regular users get 403. Turning Admin Mode off also disables the cooldown bypass.
+- **Test data stays separate:** test sightings use status `test` (0 points, never in public routes or the
+  leaderboard); test events live in their own table and appear only for admins in Admin Mode.
+- Point changes need a reason and confirmation, are idempotent per request ID, can't drop a total below 0,
+  and count on the leaderboard. Every admin action is written to `admin_log`.
+
 ## Existing reports and optional review
 
 The previous private pending-photo queue is removed. Migration publishes existing validated pending photos and awards their stored eligible points once, retaining original timestamps and pin expiry. Back up the database before release. Legacy scores remain intact.

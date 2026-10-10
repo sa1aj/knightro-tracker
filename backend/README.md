@@ -32,6 +32,10 @@ Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT with pywebpush instal
 
 Persistent push jobs are leased, retried with backoff up to five attempts, and discarded when alerts expire. 404/410 removes the subscription. Delivery is at least once after a worker crash; alert-specific notification tags collapse repeats. Changing the VAPID key requires resubscription. iPhone Web Push requires a supported Home Screen app.
 
+## Admin Mode
+
+admin.py holds the admin routes. Authorization is server-side only: a verified session whose email is in ADMIN_EMAILS (comma-separated; defaults to jo822842@ucf.edu when unset), plus Admin Mode switched on for tool routes. Admin state, point adjustments (unique request IDs), test events and the action log are SQLite tables created by the normal migration. Test sightings use status 'test' and never reach public routes or the leaderboard. test_admin.py covers signed-out, regular-user, forged-field, wrong-origin, mode-off and duplicate-request cases.
+
 ## Production
 
 Use one instance with durable SQLite/local block storage behind a hardened HTTPS proxy, edge limits, request timeouts, and PUBLIC_ORIGIN. Preserve public Host; do not trust arbitrary forwarded headers. The standard-library server is for development and must stay private in deployment. Before multiple replicas or serverless, move transactions and leases to shared storage and photos to object storage. See [AWS handoff](../docs/aws-deployment.md). The existing scraper Lambda and GitHub Pages do not deploy this application backend.

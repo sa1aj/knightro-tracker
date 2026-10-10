@@ -70,7 +70,8 @@
   // ---------- state ----------
   const state = {
     sightings: [], events: [], eventsLoaded: false, eventsError: '', eventsGeneratedAt: null,
-    user: null, nextSightingAt: 0, sessionLoaded: false, emailDelivery: null,
+    user: null, admin: null, nextSightingAt: 0, sessionLoaded: false, emailDelivery: null,
+    testSightings: [], testEvents: [],
     leaders: [], leadersLoaded: false, leadersError: '', selectedEvent: null, stack: [],
     bounties: [], alerts: [], gameLoaded: false, gameError: '', reports: [], reportsError: '', reportsLoaded: false, senseMessage: '',
     auth: { mode: 'signup', step: 'email', email: '', displayName: '', busy: false, error: '' },
@@ -99,7 +100,17 @@
     referrerPolicy: 'origin',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
-  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+  const zoomControl = L.control.zoom({ position: 'bottomleft', zoomInTitle: 'Zoom in', zoomOutTitle: 'Zoom out' }).addTo(map);
+  // Recenter lives in the zoom group so the three map controls always sit together.
+  const recenterButton = L.DomUtil.create('a', 'leaflet-control-recenter', zoomControl.getContainer());
+  recenterButton.href = '#';
+  recenterButton.setAttribute('role', 'button');
+  recenterButton.setAttribute('aria-label', 'Recenter map on this campus');
+  recenterButton.title = 'Recenter map on this campus';
+  recenterButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M7 1h2v3H7zM7 12h2v3H7zM1 7h3v2H1zM12 7h3v2h-3zM5 5h6v6H5zM7 7v2h2V7z" fill="currentColor" fill-rule="evenodd"/></svg>';
+  L.DomEvent.disableClickPropagation(recenterButton);
+  L.DomEvent.on(recenterButton, 'click', (e) => { L.DomEvent.preventDefault(e); recenterMap(); });
+  L.DomEvent.on(recenterButton, 'keydown', (e) => { if (e.key === ' ') { L.DomEvent.preventDefault(e); recenterMap(); } });
   map.on('zoomend', () => sfx.play('tick'));
   window.KT.map = map; // handy for debugging in dev tools
 
@@ -107,8 +118,11 @@
   const bountyAreas = new Map();
   let dropPin = null;
 
-  const campusSightings = () => state.sightings.filter((s) => mapUtils.contains(campus, {lat:s.lat, lng:s.long}));
-  const activeEvents = () => state.events.filter((e) => e.endsAt > nowSec());
+  const adminOn = () => !!(state.admin && state.admin.allowed && state.admin.mode);
+  const campusSightings = () => [...state.sightings, ...(adminOn() ? state.testSightings : [])]
+    .filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && mapUtils.contains(campus, {lat:s.lat, lng:s.long}))
+    .sort((a, b) => b.timestamp - a.timestamp);
+  const activeEvents = () => [...state.events, ...(adminOn() ? state.testEvents : [])].filter((e) => e.endsAt > nowSec());
   const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
   const dropIcon = L.divIcon({ className: 'kt-drop', html: '<img src="' + CONFIG.PIN_IMAGE + '" alt="">', iconSize: [66, 74], iconAnchor: [33, 72] });
@@ -126,7 +140,7 @@
     }
     const items = [
       ...campusSightings().map((s) => ({ ...s, kind: 'sighting', key: 's:' + s.sightingId })),
-      ...activeEvents().filter((e) => e.probability >= .8 && e.startsAt <= nowSec() + 1800 && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
+      ...activeEvents().filter((e) => (e.isTest || (e.probability >= .8 && e.startsAt <= nowSec() + 1800)) && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
         .map((e) => ({ ...e, kind:'event', key:'e:' + e.eventId })),
       ...activeBounties().filter(b => b.campus === campus.id).map(b => ({...b,kind:'bounty',key:'b:'+b.bountyId})),
     ];
@@ -138,11 +152,12 @@
       let marker = markers.get(id);
       const multiple = group.items.length > 1;
       const selected = group.items.some((item) => state.panel === 'detail' && item.sightingId === state.selectedId);
-      const signature = group.items.map((item) => item.key).join('|') + selected;
+      const signature = group.items.map((item) => item.key).join('|');
       if (!marker) {
         marker = L.marker([first.lat, first.long], { keyboard: true, riseOnHover: true })
           .on('click', () => {
             if (state.panel === 'report') return;
+            fx.replay(marker.getElement()?.querySelector('.pin-art'), 'tap'); // bounce the art, never the positioned marker
             if (marker.items.length > 1) {
               state.stack = marker.items;
               openPanel('stack');
@@ -155,15 +170,18 @@
       marker.setLatLng([first.lat, first.long]);
       if (marker.signature !== signature) {
         const art = first.kind === 'sighting'
-          ? '<img class="pin-normal" src="' + CONFIG.PIN_IMAGE + '" alt=""><img class="pin-hover" src="' + CONFIG.PIN_HOVER_IMAGE + '" alt="">'
+          ? '<img src="' + CONFIG.PIN_IMAGE + '" alt="">'
           : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
+        const test = group.items.some((item) => item.isTest);
         marker.setIcon(L.divIcon({
-          className: 'kt-pin asset-pin ' + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (selected ? 'sel' : ''),
-          html: '<div class="kt-pin-body">' + art + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
+          className: 'kt-pin asset-pin ' + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (test ? 'test-pin ' : ''),
+          html: '<div class="kt-pin-body"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
           iconSize: [66, 74], iconAnchor: [33, 72],
         }));
         marker.signature = signature;
       }
+      // Toggle selection on the existing element so hover/selected states can ease back smoothly.
+      marker.getElement()?.classList.toggle('sel', selected);
       const label = multiple ? group.items.length + ' nearby sightings, event hints, and missions. Open stack.' : first.kind === 'sighting' ? 'Knightro sighting ' + (first.placeLabel || placeName(first.lat, first.long)) : first.kind === 'bounty' ? 'Daily double-point bounty: ' + first.sectorName : first.title;
       marker.getElement()?.setAttribute('aria-label', label);
       marker.getElement()?.setAttribute('title', label);
@@ -203,7 +221,7 @@
       const opacity = Math.max(...marker.items.map((item) => item.kind !== 'sighting' ? 1 : mapUtils.opacity(item.timestamp, nowSec(), CONFIG.ACTIVE_WINDOW_SEC)));
       marker.setOpacity(opacity);
       const age = marker.getElement()?.querySelector('.age');
-      if (age) age.textContent = marker.items.length > 1 ? 'OPEN STACK' : marker.items[0].kind === 'bounty' ? 'BOUNTY ' + countdown(marker.items[0].expiresAt) : marker.items[0].kind === 'event' ? 'LIKELY EVENT' : shortAgo(marker.items[0]);
+      if (age) age.textContent = marker.items.length > 1 ? 'OPEN STACK' : marker.items[0].isTest ? 'TEST' : marker.items[0].kind === 'bounty' ? 'BOUNTY ' + countdown(marker.items[0].expiresAt) : marker.items[0].kind === 'event' ? 'LIKELY EVENT' : shortAgo(marker.items[0]);
     }
   }
   function constrainCampus() {
@@ -255,6 +273,18 @@
   }
 
   // ---------- data ----------
+  function applySession(session) {
+    state.user = session.user; state.nextSightingAt = session.nextSightingAt;
+    state.sessionLoaded = true; state.emailDelivery = session.emailDelivery;
+    const wasOn = adminOn();
+    state.admin = session.admin || null; // Display only; the server enforces every admin action.
+    if (!adminOn()) { state.testSightings = []; state.testEvents = []; if (state.panel === 'admin') closePanel(); }
+    else if (!wasOn) admin.loadTestData();
+  }
+  async function refreshSession() {
+    try { applySession(await api.getSession()); } catch { /* the next poll retries */ }
+    render({ panel: !['report', 'account', 'admin'].includes(state.panel) });
+  }
   let inFlight = false;
   async function refresh({ quiet = false } = {}) {
     if (inFlight) return;
@@ -264,8 +294,8 @@
     try {
       const [all, session] = await Promise.all([api.getSightings(), api.getSession()]);
       const list = all.filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && onCampus({lat:s.lat,lng:s.long}));
-      state.user = session.user; state.nextSightingAt = session.nextSightingAt;
-      state.sessionLoaded = true; state.emailDelivery = session.emailDelivery;
+      applySession(session);
+      if (adminOn()) admin.loadTestData();
       const known = new Set(state.sightings.map((s) => s.sightingId));
       const fresh = list.filter((s) => !known.has(s.sightingId));
       state.sightings = list;
@@ -287,7 +317,7 @@
       state.loaded = true;
       inFlight = false;
       // Don't rebuild the report form under someone who is typing; everything else refreshes.
-      render({ panel: !['report','account'].includes(state.panel) });
+      render({ panel: !['report','account','admin'].includes(state.panel) });
       fx.replay($('#status'), 'blink');
     }
   }
@@ -306,7 +336,7 @@
   // ---------- panels ----------
   const TITLES = { report: 'REPORT A SIGHTING', recent: 'ACTIVE SIGHTINGS', detail: 'SIGHTING',
     account:'YOUR UCF ACCOUNT', events:'LIKELY KNIGHTRO EVENTS', event:'EVENT DETAILS', leaderboard:'KNIGHT LEADERBOARD', stack:'NEARBY PINS',
-    bounties:'HIGH-VALUE BOUNTIES', sense:'KNIGHT-SENSE', reports:'MY PHOTO REPORTS' };
+    bounties:'HIGH-VALUE BOUNTIES', sense:'KNIGHT-SENSE', reports:'MY PHOTO REPORTS', admin:'ADMIN PANEL' };
 
   function openPanel(name, backTo = null) {
     setMenu(false);
@@ -327,6 +357,7 @@
     if (name === 'leaderboard') loadLeaderboard();
     if (name === 'reports') loadReports();
     if (['bounties','sense'].includes(name)) loadGame();
+    if (name === 'admin') admin.loadPanel();
     $('#panel-close').focus({ preventScroll: true });
   }
   function closePanel() {
@@ -348,7 +379,7 @@
 
   $('#panel-close').addEventListener('click', closePanel);
   $('#panel-back').addEventListener('click', () => state.backTo && openPanel(state.backTo));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#navigation').hidden) setMenu(false); else if (state.panel) closePanel(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (menuOpen) setMenu(false); else if (state.panel) closePanel(); } });
   document.querySelectorAll('[data-panel]').forEach((b) => b.addEventListener('click', () => openPanel(b.dataset.panel)));
 
   // ---------- report flow ----------
@@ -538,15 +569,16 @@
   }
 
   function detailView() {
-    const s = state.sightings.find((x) => x.sightingId === state.selectedId);
+    const s = campusSightings().find((x) => x.sightingId === state.selectedId) || state.sightings.find((x) => x.sightingId === state.selectedId);
     if (!s) return [h('p', { class: 'muted' }, 'This sighting is more than 20 minutes old and has left the map.')];
     const fresh = ageSec(s) < CONFIG.FRESH_SEC;
     const photo = photoFor(s);
     return [
-      h('div', { class: 'label' }, s.sightingId === state.sightings[0].sightingId ? 'Latest sighting' : 'Sighting'),
+      s.isTest && h('p', { class: 'msg warn' }, 'TEST SIGHTING · only visible to admins in Admin Mode · 0 points'),
+      h('div', { class: 'label' }, s.sightingId === campusSightings()[0]?.sightingId ? 'Latest sighting' : 'Sighting'),
       h('figure', { class: 'photo-fig' },
         h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: s.photoUrl ? 'Reported Knightro sighting photo' : 'Illustration of Knightro' }),
-        h('figcaption', { class: 'label' }, s.photoUrl ? (s.status === 'confirmed' ? 'Photo confirmed' : 'Community photo report') + ' · ' + s.points + ' point(s)' : 'Legacy sighting · illustration')
+        h('figcaption', { class: 'label' }, s.photoUrl ? (s.status === 'confirmed' ? 'Photo confirmed' : 'Community photo report') + ' · ' + s.points + ' point(s)' : s.isTest ? 'Test sighting · illustration' : 'Legacy sighting · illustration')
       ),
       h('div', { class: `fresh-note ${fresh ? 'live' : 'old'}` },
         fresh ? `SPOTTED ${timeAgo(s).toUpperCase()}. HE MAY STILL BE NEARBY.` : `SEEN ${timeAgo(s).toUpperCase()}. HE MAY HAVE MOVED ON.`),
@@ -557,13 +589,21 @@
   }
 
   // ---------- navigation, verified accounts, events, leaderboard ----------
+  let menuOpen = false;
   function setMenu(open) {
-    $('#navigation').hidden = !open;
-    $('#btn-menu').setAttribute('aria-expanded', String(open));
-    $('#btn-menu').setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-    if (!open && $('#navigation').contains(document.activeElement)) $('#btn-menu').focus();
+    if (open === menuOpen) return;
+    menuOpen = open;
+    const nav = $('#navigation'), toggle = $('#btn-menu');
+    if (!open && nav.contains(document.activeElement)) toggle.focus({ preventScroll: true });
+    nav.classList.toggle('open', open);
+    nav.inert = !open;
+    nav.setAttribute('aria-hidden', String(!open));
+    toggle.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+    sfx.play(open ? 'open' : 'close');
   }
-  $('#btn-menu').addEventListener('click', () => setMenu($('#navigation').hidden));
+  $('#btn-menu').addEventListener('click', () => setMenu(!menuOpen));
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('#navigation, #btn-menu')) setMenu(false);
   });
@@ -583,13 +623,15 @@
     if (state.user) return [
       h('h3', {}, 'WELCOME, ' + state.user.displayName.toUpperCase()),
       h('p', {}, state.user.email),
+      h('p', {class:'small'}, 'Total points: ', h('strong', {}, String(state.user.score ?? 0))),
+      state.admin?.allowed && h('p', {class:'msg warn'}, 'This account is authorized for Admin Mode. Use the ADMIN section of the menu.'),
       h('p', {class:'msg'}, 'UCF email verified. Live photo reports earn points immediately; your first report in today’s bounty section earns double. Your email stays private.'),
       h('p', {id:'cooldown-note',class:'small'}),
       h('p', {class:'muted small'}, 'An essential sign-in cookie keeps this browser signed in for 14 days. Signing out removes it. No advertising cookies are used.'),
       h('button', {type:'button',class:'px-btn alt',onclick:async (event) => {
         const button = event.currentTarget;
         button.disabled = true;
-        try { await api.logout(); state.user = null; state.nextSightingAt = 0; render(); }
+        try { await api.logout(); state.user = null; state.admin = null; state.testSightings = []; state.testEvents = []; state.nextSightingAt = 0; render(); }
         catch (error) { button.disabled = false; fx.toast('SIGN OUT FAILED',error.message,'bad'); }
       }}, 'SIGN OUT'),
     ];
@@ -614,7 +656,7 @@
           a.step = 'code';
         } else {
           const session = await api.verifyCode(a.email.trim(), verificationCode);
-          state.user = session.user; state.nextSightingAt = session.nextSightingAt;
+          applySession(session);
           fx.toast('WELCOME, KNIGHT', 'Your UCF account is ready.', 'good');
           const next = a.after; a.after = null; a.step = 'email';
           if (next) { closePanel(); openPanel(next); }
@@ -698,6 +740,7 @@
     let safeUrl = null;
     try { const url = new URL(event.url); if (url.protocol === 'https:') safeUrl = url.href; } catch { /* no external link */ }
     return [
+      event.isTest && h('p',{class:'msg warn'},'TEST EVENT · only visible to admins in Admin Mode'),
       h('div',{class:'event-hero'},CONFIG.EVENT_FRAMES.map((src,i) => h('img',{src,alt:'',class:'event-frame frame-' + i}))),
       h('h3',{},event.title), h('p',{},event.location || 'Location to be announced'),
       h('p',{class:'msg'},event.reason + '. Knightro attendance is unconfirmed.'),
@@ -843,7 +886,7 @@
       $('#panel-back').hidden = !(['detail','event'].includes(state.panel) && state.backTo);
       const views = {report: () => reportView(state.report), recent: recentView, detail: detailView,
         account: accountView, events: eventsView, event: eventView, leaderboard: leaderboardView, stack: stackView,
-        bounties:bountiesView, sense:senseView, reports:reportsView};
+        bounties:bountiesView, sense:senseView, reports:reportsView, admin:() => admin.view()};
       const view = views[state.panel]().filter(Boolean);
       const body = $('#panel-body');
       const scroll = body.scrollTop;
@@ -913,7 +956,15 @@
 
     $('#status-text').textContent = !state.loaded ? 'CONNECTING…' : state.netError ? 'OFFLINE' : `LIVE · ${count} ACTIVE`;
     $('#status').classList.toggle('bad', !!state.netError);
-    $('#account-label').textContent = state.user ? '◇ ' + state.user.displayName : '◇ Sign in / create account';
+    $('#account-label').textContent = state.user ? state.user.displayName : 'Sign in / create account';
+    $('#account-sub').textContent = state.user ? (state.user.score ?? 0) + ' pts · account & sign out' : 'UCF email · no password';
+    document.querySelectorAll('.navigation [data-panel]').forEach((b) => b.toggleAttribute('aria-current', b.dataset.panel === state.panel));
+    const allowed = !!(state.admin && state.admin.allowed);
+    $('#nav-admin').hidden = !allowed;
+    $('#nav-admin-panel').hidden = !adminOn();
+    $('#admin-mode-toggle').setAttribute('aria-checked', String(adminOn()));
+    $('#admin-mode-note').textContent = adminOn() ? (state.admin.bypassCooldown ? 'On · cooldown bypass active' : 'On · tools visible') : 'Off · tools hidden';
+    document.body.classList.toggle('admin-mode', adminOn());
     updateCooldown();
     paintMissions();
   }
@@ -921,11 +972,15 @@
   // ---------- chrome ----------
   $('#plaque-helm').src = IMG.helm;
   document.querySelectorAll('img[data-icon]').forEach((img) => (img.src = IMG[img.dataset.icon]));
-  $('#btn-recenter').addEventListener('click', () => {
+  $('#nav-helm').src = IMG.helm;
+  function recenterMap() {
     map.flyTo([campus.center.lat, campus.center.lng], map.getMinZoom(), { duration: 0.7 });
     sfx.play('whoosh');
-    fx.replay($('#btn-recenter'), 'spin');
-  });
+    fx.replay(recenterButton, 'spin');
+  }
+  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession,
+    buildings: () => buildings, campus: () => campus });
+  $('#admin-mode-toggle').addEventListener('click', () => admin.setMode(!adminOn()));
   const soundBtn = $('#btn-sound');
   const paintSound = () => {
     const on = sfx.enabled();
@@ -964,8 +1019,8 @@
     const expiredEvents = state.events.some((e) => e.endsAt <= nowSec());
     const expiredBounties = state.bounties.some(b => b.expiresAt <= nowSec());
     if (active.length !== state.sightings.length || expiredEvents || expiredBounties) {
-      state.sightings = active; state.events = activeEvents(); state.bounties = activeBounties();
-      render({panel: !['account','report'].includes(state.panel)});
+      state.sightings = active; state.events = state.events.filter((e) => e.endsAt > nowSec()); state.bounties = activeBounties();
+      render({panel: !['account','report','admin'].includes(state.panel)});
     } else updatePinAges();
     updateCooldown();
     paintMissions();

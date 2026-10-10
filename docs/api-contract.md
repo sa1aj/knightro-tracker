@@ -20,4 +20,20 @@ All times are Unix seconds. GET responses are no-store. POST requires applicatio
 - POST /api/push/subscribe: browser Push API subscription with endpoint and keys.p256dh/auth. Verified accounts, recognized HTTPS push hosts, max five devices/account.
 - POST /api/push/unsubscribe: removes this account's subscription and queued jobs.
 
+## Admin routes (verified allowlisted accounts only)
+
+Every route re-checks the session, the server-side `ADMIN_EMAILS` allowlist, and, except `/state` and `/mode`, that Admin Mode is on. Otherwise 401/403. POSTs follow the same Origin/JSON rules as above.
+
+- GET /api/auth/session adds `admin: {allowed, mode, bypassCooldown}` only for allowlisted accounts, and `user.score` for everyone signed in.
+- GET /api/admin/state · POST /api/admin/mode {enabled}: switching off also clears the cooldown bypass.
+- POST /api/admin/cooldown {enabled}: bypass the 120-second cooldown for the admin's own account only.
+- GET /api/admin/users?q=: name/email search with current score.
+- POST /api/admin/points {userId, amount (int, ±1000, not 0), reason (3–140), requestId, confirm:true}: idempotent per requestId; a total can't go below 0.
+- GET /api/admin/test-events · POST /api/admin/test-events {title, description, startsAt, endsAt, lat, long, eventId?} (create or edit) · POST /api/admin/test-events/delete {eventId, confirm:true}.
+- GET /api/admin/test-sightings · POST /api/admin/test-sightings {lat, long, caption}: status `test`, 0 points, never public.
+- GET /api/admin/sightings (last 24 h, all statuses) · POST /api/admin/sightings/remove {sightingId, reason, confirm:true}: rejects a real report (points revoked) or deletes a test one.
+- POST /api/admin/test-data/clear {confirm:true} · GET /api/admin/log (latest 50 actions: who, what, when).
+
+GET /api/leaderboard scores now include admin point adjustments.
+
 JPEG validation establishes readable image evidence, not automated Knightro identification or cryptographic camera provenance. Optional operator rejection removes a report and its awarded points. The previous pending queue migrates once to published reports with stored eligible points and original expiry. Existing deployment endpoints remain unchanged.

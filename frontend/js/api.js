@@ -38,5 +38,22 @@
         .sort((a, b) => b.timestamp - a.timestamp);
     },
     postSighting: (body) => request('/sightings', body),
+    // Admin routes. The server authorizes every call from the verified session; nothing here grants access.
+    admin: {
+      state: () => request('/admin/state'),
+      setMode: (enabled) => request('/admin/mode', {enabled}),
+      setCooldownBypass: (enabled) => request('/admin/cooldown', {enabled}),
+      users: (q) => request('/admin/users?q=' + encodeURIComponent(q)),
+      adjustPoints: (body) => request('/admin/points', body),
+      testEvents: () => request('/admin/test-events'),
+      saveTestEvent: (body) => request('/admin/test-events', body),
+      deleteTestEvent: (eventId) => request('/admin/test-events/delete', {eventId, confirm:true}),
+      testSightings: () => request('/admin/test-sightings'),
+      createTestSighting: (body) => request('/admin/test-sightings', body),
+      sightings: () => request('/admin/sightings'),
+      removeSighting: (sightingId, reason) => request('/admin/sightings/remove', {sightingId, reason, confirm:true}),
+      clearTestData: () => request('/admin/test-data/clear', {confirm:true}),
+      log: () => request('/admin/log'),
+    },
   };
 })();

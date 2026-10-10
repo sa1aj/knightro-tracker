@@ -21,10 +21,12 @@ from contextlib import contextmanager, closing
 from email.message import EmailMessage
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from PIL import Image, ImageOps, UnidentifiedImageError
 from campus import place, building_at, read_events
 import game
+import admin
+from errors import APIError
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
@@ -35,11 +37,6 @@ SESSION_SECONDS = 14 * 86400
 CODE_SECONDS = 600
 CAMERA_SECONDS = 120
 EMAIL_RE = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@(ucf\.edu|knights\.ucf\.edu)", re.ASCII)
-
-
-class APIError(Exception):
-    def __init__(self, status, message, retry_after=None):
-        self.status, self.message, self.retry_after = status, message, retry_after
 
 
 def digest(value):
@@ -85,6 +82,7 @@ def initialize(path):
         """)
         db.commit()
         game.migrate(db)
+        admin.migrate(db)
         db.commit()
 
 
@@ -174,13 +172,19 @@ class Handler(BaseHTTPRequestHandler):
             raise APIError(401, "Sign in with your verified UCF email to post.")
         return row
 
-    def session_data(self, row):
-        return {
-            "user": {"id": row["id"], "displayName": row["name"], "email": row["email"]} if row else None,
-            "nextSightingAt": row["last_post"] + COOLDOWN if row else 0,
+    def session_data(self, row, db):
+        bypass = row is not None and admin.bypass_active(db, row)
+        data = {
+            "user": {"id": row["id"], "displayName": row["name"], "email": row["email"],
+                     "score": admin.user_score(db, row["id"])} if row else None,
+            "nextSightingAt": 0 if bypass or not row else row["last_post"] + COOLDOWN,
             "cooldownSeconds": COOLDOWN,
             "emailDelivery": "development" if self.server.dev_mail else "smtp" if smtp_settings() else "unconfigured",
         }
+        info = admin.session_info(db, row)
+        if info:  # Present only for allowlisted, verified accounts; the server re-checks every admin call.
+            data["admin"] = info
+        return data
 
     def session_cookie(self, token, age=SESSION_SECONDS):
         secure = "; Secure" if self.server.public_origin.startswith("https://") else ""
@@ -198,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/"):
                 with self.db_connection() as db:
                     if path == "/api/auth/session":
-                        result = self.session_data(self.user(db))
+                        result = self.session_data(self.user(db), db)
                     elif path == "/api/sightings":
                         rows = db.execute("""
                             SELECT id AS sightingId, lat, lng AS long, caption, timestamp, campus,
@@ -208,13 +212,10 @@ class Handler(BaseHTTPRequestHandler):
                         """, (int(time.time()) - ACTIVE_SECONDS,)).fetchall()
                         result = {"sightings": [dict(r) for r in rows]}
                     elif path == "/api/leaderboard":
-                        rows = db.execute("""
-                            SELECT u.id, u.name AS displayName, SUM(s.points) AS score
-                            FROM users u JOIN sightings s ON s.user_id=u.id
-                            WHERE s.status IN ('published','confirmed','legacy')
-                            GROUP BY u.id ORDER BY score DESC, u.created ASC, u.id ASC LIMIT 50
-                        """).fetchall()
-                        result = {"leaders": [dict(r) for r in rows], "period": "all-time"}
+                        # Published sighting points plus admin point adjustments. Test sightings never count.
+                        result = {"leaders": admin.leaderboard(db), "period": "all-time"}
+                    elif path.startswith("/api/admin/"):
+                        result = admin.handle_get(self, db, path, parse_qs(urlsplit(self.path).query))
                     elif path == "/api/events":
                         result = read_events(self.server.events_file, int(time.time()))
                     elif path == '/api/game':
@@ -307,6 +308,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.post_sighting(data)
             elif path == '/api/camera-session':
                 self.camera_session()
+            elif path.startswith('/api/admin/'):
+                with self.db_connection() as db:
+                    result = admin.handle_post(self, db, path, data)
+                self.respond(200, result)
             elif path in ('/api/presence', '/api/push/subscribe', '/api/push/unsubscribe'):
                 with self.db_connection() as db:
                     db.execute('BEGIN IMMEDIATE')
@@ -434,7 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             db.execute("DELETE FROM sessions WHERE token_hash=?", (digest(self.token()),))
             db.execute("INSERT INTO sessions VALUES (?,?,?)", (digest(token), user["id"], now + SESSION_SECONDS))
             db.execute("DELETE FROM challenges WHERE email=?", (email,))
-        self.respond(200, self.session_data(user), self.session_cookie(token))
+            result = self.session_data(user, db)
+        self.respond(200, result, self.session_cookie(token))
 
     def camera_session(self):
         """One short-lived capture window per verified account. Tokens are consumed on publish."""
@@ -442,7 +448,7 @@ class Handler(BaseHTTPRequestHandler):
         with self.db_connection() as db:
             db.execute('BEGIN IMMEDIATE')
             user = self.user(db, required=True)
-            remaining = user['last_post'] + COOLDOWN - now
+            remaining = 0 if admin.bypass_active(db, user) else user['last_post'] + COOLDOWN - now
             if remaining > 0:
                 raise APIError(429, f'Please wait {remaining} seconds before another sighting.', remaining)
             db.execute('DELETE FROM camera_tokens WHERE expires<=?', (now,))
@@ -464,7 +470,9 @@ class Handler(BaseHTTPRequestHandler):
         with self.db_connection() as db:
             db.execute("BEGIN IMMEDIATE")  # Serializes cooldown check and write across concurrent requests.
             user = self.user(db, required=True)
-            remaining = user["last_post"] + COOLDOWN - now
+            # Admin testing override: verified allowlisted account, Admin Mode on, bypass on.
+            bypass = admin.bypass_active(db, user)
+            remaining = 0 if bypass else user["last_post"] + COOLDOWN - now
             if remaining > 0:
                 raise APIError(429, f"Please wait {remaining} seconds before another sighting.", remaining)
             token = data.get('captureToken')
@@ -485,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
                         label['placeLabel'], photo, eligible, bounty_id, eligible))
             db.execute("UPDATE users SET last_post=? WHERE id=?", (now, user["id"]))
             db.execute('DELETE FROM camera_tokens WHERE user_id=?', (user['id'],))
-        self.respond(201, {"sightingId": sid, "timestamp": now, "nextSightingAt": now + COOLDOWN,
+        self.respond(201, {"sightingId": sid, "timestamp": now, "nextSightingAt": now if bypass else now + COOLDOWN,
                           'status': 'published', 'points': eligible, 'eligiblePoints': eligible, 'bountyId': bounty_id,
                           'lat': lat, 'long': lng, 'caption': caption.strip(), 'campus': campus['id'],
                           'photoUrl': '/api/photos/' + sid, **label})

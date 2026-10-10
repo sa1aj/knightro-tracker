@@ -3,11 +3,17 @@ button { touch-action: manipulation; }
 .px-btn { min-height: 40px; }
 .kt-drop { display: grid; place-items: center; }
 .kt-drop img { width: 66px; height: 74px; object-fit: contain; image-rendering: pixelated; }
-.mission-bar { position: fixed; z-index: 610; left: 50%; top: 104px; transform: translateX(-50%); display: flex; gap: 12px; max-width: calc(100vw - 150px); }
-.mission-bar button { border: 0; border-radius: 0; padding: 9px 12px 7px; background: var(--ink); color: var(--gold); cursor: pointer; font: 10px var(--f-display); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--px-border), inset 0 -3px 0 var(--gold-lo), 4px 4px 0 #0008; }
+/* Anchored: the mission buttons never move when panels open, close, or change. The right panel starts below them. */
+.mission-bar { position: fixed; z-index: 610; left: 50%; top: calc(var(--frame) + 90px); transform: translateX(-50%); display: flex; gap: 14px; max-width: calc(100vw - 2 * var(--frame) - 40px); }
+.mission-bar button {
+  border: 0; border-radius: 0; padding: 9px 12px 7px; margin-bottom: 5px; background: var(--ink); color: var(--gold); cursor: pointer;
+  font: 10px var(--f-display); letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  box-shadow: var(--px-border), inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo), 0 6px 0 var(--bevel-lo);
+  transition: transform 140ms var(--ease-ui), box-shadow 140ms var(--ease-ui), background 120ms ease, color 120ms ease;
+}
 .mission-bar button:hover, .mission-bar button:focus-visible { background: var(--gold); color: var(--ink); }
+.mission-bar button:active { transform: translateY(4px); box-shadow: var(--px-border), inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi), 0 2px 0 var(--bevel-lo); }
 .mission-bar .has-alert { background: var(--gold); color: var(--ink); }
-body:has(.panel-shell.open) .mission-bar { left: calc((100vw - var(--panel-w) - 40px) / 2); max-width: calc(100vw - var(--panel-w) - 60px); }
 .bounty-art { display: grid; place-items: center; width: 54px; height: 54px; background: var(--gold); color: var(--ink); font: bold 22px var(--f-display); box-shadow: var(--px-border), inset -4px -4px 0 var(--gold-lo), inset 4px 4px 0 var(--gold-hi); }
 .mission-intro { display: grid; gap: 10px; border-top: 4px solid var(--gold); padding-top: 12px; }
 .eyebrow { font: 9px var(--f-display); letter-spacing: .06em; color: var(--gold); }
@@ -31,8 +37,7 @@ body:has(.panel-shell.open) .mission-bar { left: calc((100vw - var(--panel-w) - 
 .camera-actions { display: flex; }
 .camera-snap { width: 100%; }
 @media(max-width:720px) {
-  body:has(.panel-shell.open) .mission-bar { left: 50%; max-width: calc(100vw - 30px); }
-  .mission-bar { top: 96px; width: calc(100vw - 30px); max-width: calc(100vw - 30px); gap: 10px; }
+  .mission-bar { top: 80px; width: calc(100vw - 2 * var(--frame) - 12px); max-width: none; gap: 10px; }
   .mission-bar button { flex: 1; min-width: 0; padding: 9px 7px; font-size: 8px; }
   .camera-viewport { max-height: 200px; }
 }

@@ -5,6 +5,7 @@
   'use strict';
   const { CONFIG, IMG, api, pixelPhoto, hash, sfx, fx, mapUtils } = window.KT;
   let campuses;
+  await api.ready; // settles CONFIG (app vs static) before anything reads it
   try {
     const response = await fetch(CONFIG.CAMPUSES_URL);
     if (!response.ok) throw new Error('Campus configuration could not load.');

@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   const { CONFIG } = window.KT;
-  const STATIC = CONFIG.DEPLOYMENT === 'static';
+  let STATIC = CONFIG.DEPLOYMENT === 'static';
 
   /** A feature this deployment doesn't have (e.g. accounts on the static GitHub Pages site). */
   function unavailable(feature) {
@@ -33,7 +33,8 @@
         // A plain 404 page means no app server is answering /api (e.g. a static file server).
         message = 'Knightro HQ is unavailable. Please try again later.';
       }
-      throw Object.assign(new Error(message || `Request failed (${res.status}). Please retry.`), { status: res.status, retryAfter: data?.retryAfter });
+      throw Object.assign(new Error(message || `Request failed (${res.status}). Please retry.`),
+        { status: res.status, retryAfter: data?.retryAfter, noServer: !json && res.status === 404 });
     }
     if (!json || !data || typeof data !== 'object') throw Object.assign(new Error('Knightro HQ sent an unexpected response. Please retry.'), { status: res.status });
     return data;
@@ -43,8 +44,27 @@
   // Static site: anonymous AWS sightings carry no photo, account, or points. Mark them so the UI says so.
   const fromAws = (s) => ({ ...s, caption: s.caption || '', photoUrl: null, points: null, status: 'anonymous', source: 'aws' });
 
+  /**
+   * App mode on a host that may not have a backend yet (e.g. Vercel before KNIGHTRO_BACKEND_URL is set):
+   * ask once at startup. The gateway's "being configured" 503 (api/proxy.mjs) or no server at all (plain
+   * 404) switches this page to static mode. Any other answer, including the app server's own 503s or
+   * being offline, keeps app mode and its normal errors.
+   */
+  const ready = (async () => {
+    if (STATIC || !CONFIG.FALLBACK) return;
+    try { await app('/auth/session'); }
+    catch (error) {
+      const unconfigured = error.status === 503 && /being configured/i.test(error.message);
+      if (!unconfigured && !error.noServer) return;
+      const { name, ...settings } = CONFIG.FALLBACK;
+      Object.assign(CONFIG, settings, { DEPLOYMENT: name });
+      STATIC = true;
+    }
+  })();
+
   window.KT.api = {
-    deployment: CONFIG.DEPLOYMENT,
+    ready,
+    get deployment() { return CONFIG.DEPLOYMENT; },
     // On the static site there is no session server. Say so explicitly instead of pretending to be signed out.
     getSession: () => (STATIC
       ? Promise.resolve({ user: null, admin: null, nextSightingAt: 0, emailDelivery: 'unavailable', accounts: false })

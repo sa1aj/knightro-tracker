@@ -9,6 +9,9 @@ window.KT = window.KT || {};
  *         API; likely-Knightro events are filtered in the browser from data/events.json (same rules as the
  *         server). Features that need the app server
  *         are shown as unavailable instead of failing silently.
+ *
+ * Any other host (Vercel, a deployed server) starts in app mode. If /api answers that no backend is
+ * connected yet (the Vercel gateway's 503, or a plain 404 page), api.js switches to static at startup.
  */
 (function () {
   const AWS_SIGHTINGS_API = 'https://zxigfjv1p9.execute-api.us-east-1.amazonaws.com';
@@ -19,7 +22,8 @@ window.KT = window.KT || {};
   let deployment = /\.github\.io$/i.test(location.hostname) ? DEPLOYMENTS.static : DEPLOYMENTS.app;
   // Local testing only: http://localhost:<port>/frontend/?deployment=static previews the GitHub Pages behavior.
   const forced = new URLSearchParams(location.search).get('deployment');
-  if (forced && DEPLOYMENTS[forced] && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) deployment = DEPLOYMENTS[forced];
+  const pinned = Boolean(forced && DEPLOYMENTS[forced] && /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
+  if (pinned) deployment = DEPLOYMENTS[forced];
 
   window.KT.CONFIG = {
     // Vercel mounts at /; the local Python server mounts at /frontend/.
@@ -29,6 +33,8 @@ window.KT = window.KT || {};
     SIGHTINGS_API: deployment.SIGHTINGS_API,
     ACCOUNTS: deployment.ACCOUNTS,
     STATIC_EVENTS_URL: deployment.STATIC_EVENTS_URL,
+    // Settings api.js switches to when app mode finds no backend connected. Null when the mode is pinned.
+    FALLBACK: deployment === DEPLOYMENTS.app && !pinned ? DEPLOYMENTS.static : null,
     POLL_MS: 12000, ACTIVE_WINDOW_SEC: 1200, FRESH_SEC: 300,
     COOLDOWN_SEC: 120, CAPTION_MAX: 200,
     CAMPUSES_URL: 'data/campuses.json', BUILDINGS_URL: 'data/buildings.json', STOCK_PHOTOS: [],

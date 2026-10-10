@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {"api/proxy.mjs": {"maxDuration": 30}},
+  "rewrites": [{"source": "/api/:path*", "destination": "/api/proxy?route=:path*"}],
+  "headers": [{"source": "/api/:path*", "headers": [{"key": "Cache-Control", "value": "no-store"}]}]
+}

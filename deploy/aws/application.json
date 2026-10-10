@@ -1,0 +1,75 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Knightro application host, persistent data, private feed/backups, logs, and SSM. Existing scraper stays separate.",
+  "Parameters": {
+    "VpcId": {"Type": "AWS::EC2::VPC::Id"},
+    "PublicSubnetId": {"Type": "AWS::EC2::Subnet::Id", "Description": "Public subnet in VpcId with an Internet Gateway route"},
+    "ApplicationSecretArn": {"Type": "String", "AllowedPattern": "^arn:aws[a-zA-Z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+$", "Description": "Existing JSON secret using the AWS managed Secrets Manager encryption key"},
+    "InstanceType": {"Type": "String", "Default": "t3.small", "AllowedValues": ["t3.micro", "t3.small", "t3.medium"]},
+    "DataGiB": {"Type": "Number", "Default": 40, "MinValue": 20, "MaxValue": 1000},
+    "ImageId": {"Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>", "Default": "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"}
+  },
+  "Resources": {
+    "Storage": {
+      "Type": "AWS::S3::Bucket", "DeletionPolicy": "Retain", "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "PublicAccessBlockConfiguration": {"BlockPublicAcls": true, "IgnorePublicAcls": true, "BlockPublicPolicy": true, "RestrictPublicBuckets": true},
+        "BucketEncryption": {"ServerSideEncryptionConfiguration": [{"ServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]},
+        "VersioningConfiguration": {"Status": "Enabled"},
+        "LifecycleConfiguration": {"Rules": [{"Id": "BackupRetention", "Status": "Enabled", "Prefix": "backups/", "ExpirationInDays": 30, "NoncurrentVersionExpiration": {"NoncurrentDays": 30}}]}
+      }
+    },
+    "StoragePolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {"Bucket": {"Ref": "Storage"}, "PolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": [{"Fn::GetAtt": ["Storage", "Arn"]}, {"Fn::Sub": "${Storage.Arn}/*"}], "Condition": {"Bool": {"aws:SecureTransport": "false"}}}]}}
+    },
+    "Logs": {"Type": "AWS::Logs::LogGroup", "Properties": {"RetentionInDays": 14}},
+    "Role": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Principal": {"Service": "ec2.amazonaws.com"}, "Action": "sts:AssumeRole"}]},
+        "ManagedPolicyArns": [{"Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"}],
+        "Policies": [{"PolicyName": "KnightroRuntime", "PolicyDocument": {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": "secretsmanager:GetSecretValue", "Resource": {"Ref": "ApplicationSecretArn"}},
+          {"Effect": "Allow", "Action": "s3:GetObject", "Resource": {"Fn::Sub": "${Storage.Arn}/events/events.json"}},
+          {"Effect": "Allow", "Action": "s3:PutObject", "Resource": {"Fn::Sub": "${Storage.Arn}/backups/*"}},
+          {"Effect": "Allow", "Action": ["logs:CreateLogStream", "logs:PutLogEvents"], "Resource": {"Fn::Sub": "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${Logs}:*"}}
+        ]}}]
+      }
+    },
+    "Profile": {"Type": "AWS::IAM::InstanceProfile", "Properties": {"Roles": [{"Ref": "Role"}]}},
+    "SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {"GroupDescription": "HTTPS API and certificate challenge only; administration through SSM", "VpcId": {"Ref": "VpcId"}, "SecurityGroupIngress": [
+        {"IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "CidrIp": "0.0.0.0/0"},
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "CidrIp": "0.0.0.0/0"}
+      ]}
+    },
+    "Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {"Ref": "ImageId"}, "InstanceType": {"Ref": "InstanceType"}, "IamInstanceProfile": {"Ref": "Profile"},
+        "SubnetId": {"Ref": "PublicSubnetId"}, "SecurityGroupIds": [{"Ref": "SecurityGroup"}],
+        "MetadataOptions": {"HttpTokens": "required", "HttpPutResponseHopLimit": 1},
+        "BlockDeviceMappings": [{"DeviceName": "/dev/xvda", "Ebs": {"VolumeSize": 20, "VolumeType": "gp3", "Encrypted": true, "DeleteOnTermination": true}}],
+        "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "${AWS::StackName}-application"}}],
+        "UserData": {"Fn::Base64": "#!/bin/bash\nset -euo pipefail\ndnf install -y docker git python3\nsystemctl enable --now docker\n"}
+      }
+    },
+    "Data": {
+      "Type": "AWS::EC2::Volume", "DeletionPolicy": "Retain", "UpdateReplacePolicy": "Retain",
+      "Properties": {"AvailabilityZone": {"Fn::GetAtt": ["Instance", "AvailabilityZone"]}, "Size": {"Ref": "DataGiB"}, "VolumeType": "gp3", "Encrypted": true, "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "${AWS::StackName}-data"}}]}
+    },
+    "Attachment": {"Type": "AWS::EC2::VolumeAttachment", "Properties": {"InstanceId": {"Ref": "Instance"}, "VolumeId": {"Ref": "Data"}, "Device": "/dev/sdf"}},
+    "Address": {"Type": "AWS::EC2::EIP", "Properties": {"Domain": "vpc"}},
+    "Association": {"Type": "AWS::EC2::EIPAssociation", "Properties": {"AllocationId": {"Fn::GetAtt": ["Address", "AllocationId"]}, "InstanceId": {"Ref": "Instance"}}}
+  },
+  "Outputs": {
+    "InstanceId": {"Value": {"Ref": "Instance"}},
+    "PublicIp": {"Value": {"Ref": "Address"}},
+    "DataVolumeId": {"Value": {"Ref": "Data"}},
+    "StorageBucket": {"Value": {"Ref": "Storage"}},
+    "LogGroup": {"Value": {"Ref": "Logs"}},
+    "ApplicationSecretArn": {"Value": {"Ref": "ApplicationSecretArn"}}
+  }
+}

@@ -1,0 +1,31 @@
+{
+	email {$TLS_EMAIL}
+}
+
+{$BACKEND_DOMAIN} {
+	@application {
+		path /api/*
+		header X-Knightro-Proxy-Token {$PROXY_TOKEN}
+	}
+	handle @application {
+		request_body {
+			max_size 3MB
+		}
+		reverse_proxy 127.0.0.1:8000 {
+			# The app checks this exact Host and the original browser Origin.
+			# This value comes from operator configuration, never request headers.
+			header_up Host {$FRONTEND_HOST}
+			header_up -X-Forwarded-Host
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 20s
+			}
+		}
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

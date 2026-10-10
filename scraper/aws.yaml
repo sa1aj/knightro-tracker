@@ -20,7 +20,31 @@ Parameters:
     Default: DISABLED
     AllowedValues: [ENABLED, DISABLED]
     Description: Deploy disabled, verify a manual task, then enable
+  EventsBucket:
+    Type: String
+    Default: ''
+    Description: Existing private application StorageBucket output; blank keeps scrape-only behavior
+Conditions:
+  PublishFeed: !Not [!Equals [!Ref EventsBucket, '']]
 Resources:
+  FeedRole:
+    Type: AWS::IAM::Role
+    Condition: PublishFeed
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PublishApplicationFeed
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${EventsBucket}/events/events.json
   Cluster:
     Type: AWS::ECS::Cluster
   Logs:
@@ -93,6 +117,7 @@ Resources:
       Cpu: '1024'
       Memory: '2048'
       ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !If [PublishFeed, !GetAtt FeedRole.Arn, !Ref 'AWS::NoValue']
       RuntimePlatform:
         CpuArchitecture: X86_64
         OperatingSystemFamily: LINUX
@@ -101,6 +126,8 @@ Resources:
           Image: !Ref ImageUri
           Essential: true
           Environment:
+            - Name: EVENTS_BUCKET
+              Value: !Ref EventsBucket
             - Name: DATABASE_HOST
               Value: !GetAtt Database.Endpoint.Address
             - Name: DATABASE_USER
@@ -144,6 +171,15 @@ Resources:
                 Condition:
                   StringEquals:
                     iam:PassedToService: ecs-tasks.amazonaws.com
+              - !If
+                - PublishFeed
+                - Effect: Allow
+                  Action: iam:PassRole
+                  Resource: !GetAtt FeedRole.Arn
+                  Condition:
+                    StringEquals:
+                      iam:PassedToService: ecs-tasks.amazonaws.com
+                - !Ref 'AWS::NoValue'
   ScrapeSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:

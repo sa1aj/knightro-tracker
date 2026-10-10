@@ -2,6 +2,12 @@
 
 Live UCF sightings, daily section bounties, and Knight-Sense building hints in the original black-and-gold pixel theme.
 
+## Vercel and AWS deployment
+
+The complete operator guide is [deploy/README.md](deploy/README.md). It includes an application CloudFormation stack, HTTPS gateway, private secrets, persistent storage, backups, and the connection to the existing scraper.
+
+Vercel uses `frontend` as its project root and forwards `/api/*` through a Node function using private `KNIGHTRO_BACKEND_URL` and `KNIGHTRO_PROXY_TOKEN` environment variables. Deploy the backend and set these variables before releasing this frontend. Accounts, camera capture, cooldowns, points, and classified events require the application backend; an unavailable service is reported as an error.
+
 ## Run locally
 
 Python 3.12+ and the backend dependencies:
@@ -65,7 +71,7 @@ Set SMTP_HOST, SMTP_FROM, SMTP_PORT, SMTP_SECURITY=starttls (587) or ssl (465), 
 python scraper/export_events.py --database scraper/events.db
 ```
 
-The export preserves descriptions for appearance classification. Use --output and server --events for an external feed. Until exported, the UI shows an empty-feed message. Existing AWS data is not imported or changed.
+The export preserves descriptions for appearance classification. `--from-env` also reads the scraper's PostgreSQL database; `--bucket BUCKET` publishes a private S3 snapshot after a complete successful scrape. The application downloads that snapshot and returns classified events through `/api/events`. See [deployment](deploy/README.md) for the existing scraper integration.
 
 ## Checks
 

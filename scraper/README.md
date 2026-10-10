@@ -65,7 +65,9 @@ After a successful SQLite scrape, run from the repository root:
 python scraper/export_events.py --database scraper/events.db
 ```
 
-The exporter writes `frontend/data/events.json` atomically. The tracker application server reads it for `GET /api/events`; open the left menu → Campus events to browse it. The app shows mapped events with the three-frame animated icon and keeps events without coordinates in the list. Schedule the export after successful scrapes to refresh the feed automatically. For PostgreSQL deployments, provide an equivalent exported JSON feed; this helper currently reads SQLite.
+The exporter writes `frontend/data/events.json` atomically. The tracker application server reads it for `GET /api/events`, classifies likely appearances, and excludes ordinary meetings. Open the left menu → Campus events to browse the classified hints.
+
+For PostgreSQL, `python scraper/export_events.py --from-env --output /data/events.json --bucket BUCKET` reads the existing scraper database environment and publishes the private `events/events.json` S3 object. The updated container runs `scrape_and_publish.py`: it exports only after a complete successful scrape, preserving the previous snapshot after failures or `--limit` runs. Set `EventsBucket` when updating the existing scraper stack to grant its runtime role access to that one object. See [the AWS operator guide](../deploy/README.md) before changing the deployed stack.
 
 ## Database contents
 

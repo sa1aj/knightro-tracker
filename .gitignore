@@ -22,6 +22,8 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules/
+deploy/aws/secret.json
+deploy/aws/keys.private.json
 backend/.data/
 *.db-shm
 *.db-wal

@@ -2,6 +2,8 @@
   'use strict';
   const { CONFIG } = window.KT;
   const AWS_API = 'https://zxigfjv1p9.execute-api.us-east-1.amazonaws.com';
+  // Guest mode: the account/game server isn't deployed, so everything that needs it fails soft.
+  const GUEST = { user: null, nextSightingAt: 0, emailDelivery: null, admin: null };
   async function request(path, body, base = CONFIG.API_BASE) {
     let res;
     try {
@@ -20,14 +22,14 @@
     return data;
   }
   window.KT.api = {
-    getSession: () => request('/auth/session'),
+    getSession: () => request('/auth/session').catch(() => GUEST),
     requestCode: (email, displayName, mode) => request('/auth/code', { email, displayName, mode }),
     verifyCode: (email, code) => request('/auth/verify', { email, code }),
     logout: () => request('/auth/logout', {}),
-    getEvents: () => request('/events.json', undefined, ''),
+    getEvents: () => request('/data/events.json', undefined, ''),
     getGame: () => request('/game'),
     getReports: () => request('/my-reports'),
-    cameraSession: () => request('/camera-session', {}),
+    cameraSession: () => Promise.resolve({ captureToken: 'guest', expiresAt: Math.floor(Date.now() / 1000) + 120 }),
     pushConfig: () => request('/push/config'),
     subscribe: (subscription) => request('/push/subscribe', {subscription}),
     unsubscribe: (endpoint) => request('/push/unsubscribe', {endpoint}),
@@ -38,7 +40,11 @@
       return (data.sightings || []).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.long) && Number.isFinite(s.timestamp))
         .sort((a, b) => b.timestamp - a.timestamp);
     },
-    postSighting: (body) => request('/sightings', body, AWS_API),
+    async postSighting(body) {
+      const sent = { lat: body.lat, long: body.long, caption: body.caption || '' };
+      const res = await request('/sightings', sent, AWS_API);
+      return { ...sent, ...res, points: 0, nextSightingAt: 0 };
+    },
     // Admin routes. The server authorizes every call from the verified session; nothing here grants access.
     admin: {
       state: () => request('/admin/state'),

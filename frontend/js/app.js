@@ -340,7 +340,7 @@
 
   function openPanel(name, backTo = null) {
     setMenu(false);
-    if (['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
+    if (!CONFIG.GUEST_MODE && ['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
     if (name === 'report' && state.panel !== 'report' && state.nextSightingAt > nowSec()) {
       fx.toast('TAKE A BREATHER', 'Your next report unlocks in ' + Math.ceil(state.nextSightingAt - nowSec()) + ' seconds.', 'info');
       return;

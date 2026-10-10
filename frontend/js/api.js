@@ -1,66 +1,101 @@
 (function () {
   'use strict';
   const { CONFIG } = window.KT;
-  const AWS_API = 'https://zxigfjv1p9.execute-api.us-east-1.amazonaws.com';
-  // Guest mode: the account/game server isn't deployed, so everything that needs it fails soft.
-  const GUEST = { user: null, nextSightingAt: 0, emailDelivery: null, admin: null };
-  async function request(path, body, base = CONFIG.API_BASE) {
+  const STATIC = CONFIG.DEPLOYMENT === 'static';
+
+  /** A feature this deployment doesn't have (e.g. accounts on the static GitHub Pages site). */
+  function unavailable(feature) {
+    return Object.assign(new Error(feature + ' needs the Knightro app server, which this static GitHub Pages copy does not include.'),
+      { status: 'unavailable' });
+  }
+
+  async function request(base, path, body) {
+    if (base === null) throw unavailable('This feature');
+    const sameOrigin = !/^https?:/i.test(base);
     let res;
     try {
       res = await fetch(base + path, {
-        credentials: 'same-origin', cache: 'no-store',
+        // Session cookies only ever go to our own origin; the AWS API gets no credentials.
+        credentials: sameOrigin ? 'same-origin' : 'omit', cache: 'no-store',
         ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(15000),
       });
-    } catch { throw new Error("Can't reach Knightro HQ. Check your connection and try again."); }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const err = new Error(data.error || (res.status === 404 ? 'Account services are unavailable. Start the Knightro application server.' : `Request failed (${res.status})`));
-      Object.assign(err, { status: res.status, retryAfter: data.retryAfter });
-      throw err;
+    } catch (error) {
+      throw Object.assign(new Error(error.name === 'TimeoutError'
+        ? 'Knightro HQ took too long to answer. Check your connection and retry.'
+        : "Can't reach Knightro HQ. Check your connection and retry."), { status: 'network' });
     }
+    const json = (res.headers.get('Content-Type') || '').includes('application/json');
+    const data = json ? await res.json().catch(() => ({})) : {};
+    if (!res.ok) {
+      let message = data.error;
+      if (!message && !json && sameOrigin && res.status === 404) {
+        // A plain 404 page means no app server is answering /api (e.g. a static file server).
+        message = 'The Knightro app server is not running here. Start it with: python backend/server.py --dev-mail';
+      }
+      throw Object.assign(new Error(message || `Request failed (${res.status}). Please retry.`), { status: res.status, retryAfter: data.retryAfter });
+    }
+    if (!json) throw Object.assign(new Error('Knightro HQ sent an unexpected response. Please retry.'), { status: res.status });
     return data;
   }
+  const app = (path, body) => request(CONFIG.API_BASE, path, body);
+
+  // Static site: anonymous AWS sightings carry no photo, account, or points. Mark them so the UI says so.
+  const fromAws = (s) => ({ ...s, caption: s.caption || '', photoUrl: null, points: null, status: 'anonymous', source: 'aws' });
+
   window.KT.api = {
-    getSession: () => request('/auth/session').catch(() => GUEST),
-    requestCode: (email, displayName, mode) => request('/auth/code', { email, displayName, mode }),
-    verifyCode: (email, code) => request('/auth/verify', { email, code }),
-    logout: () => request('/auth/logout', {}),
-    getEvents: () => request('/data/events.json', undefined, ''),
-    getGame: () => request('/game'),
-    getReports: () => request('/my-reports'),
-    cameraSession: () => Promise.resolve({ captureToken: 'guest', expiresAt: Math.floor(Date.now() / 1000) + 120 }),
-    pushConfig: () => request('/push/config'),
-    subscribe: (subscription) => request('/push/subscribe', {subscription}),
-    unsubscribe: (endpoint) => request('/push/unsubscribe', {endpoint}),
-    openedNear: (lat, long) => request('/presence', {lat, long}),
-    getLeaderboard: () => request('/leaderboard'),
+    deployment: CONFIG.DEPLOYMENT,
+    // On the static site there is no session server. Say so explicitly instead of pretending to be signed out.
+    getSession: () => (STATIC
+      ? Promise.resolve({ user: null, admin: null, nextSightingAt: 0, emailDelivery: 'unavailable', accounts: false })
+      : app('/auth/session').then((s) => ({ ...s, accounts: true }))),
+    requestCode: (email, displayName, mode) => app('/auth/code', { email, displayName, mode }),
+    verifyCode: (email, code) => app('/auth/verify', { email, code }),
+    logout: () => app('/auth/logout', {}),
+    async getEvents() {
+      if (!STATIC) return app('/events');
+      // No server on the static site: apply the server's likely-Knightro rules to the raw feed here.
+      const [feed, buildings] = await Promise.all([request('', CONFIG.STATIC_EVENTS_URL), request('', CONFIG.BUILDINGS_URL)]);
+      return window.KT.mapUtils.eventHints(feed, buildings.buildings || [], Date.now() / 1000);
+    },
+    getGame: () => app('/game'),
+    getReports: () => app('/my-reports'),
+    cameraSession: () => app('/camera-session', {}),
+    pushConfig: () => app('/push/config'),
+    subscribe: (subscription) => app('/push/subscribe', {subscription}),
+    unsubscribe: (endpoint) => app('/push/unsubscribe', {endpoint}),
+    openedNear: (lat, long) => app('/presence', {lat, long}),
+    getLeaderboard: () => app('/leaderboard'),
     async getSightings() {
-      const data = await request('/sightings', undefined, AWS_API);
-      return (data.sightings || []).filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.long) && Number.isFinite(s.timestamp))
+      const data = await request(CONFIG.SIGHTINGS_API, '/sightings');
+      return (data.sightings || []).map((s) => (STATIC ? fromAws(s) : s))
+        .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.long) && Number.isFinite(s.timestamp))
         .sort((a, b) => b.timestamp - a.timestamp);
     },
     async postSighting(body) {
+      if (!STATIC) return app('/sightings', body);
+      // AWS accepts location + caption only. Success is reported only after its 201 response.
       const sent = { lat: body.lat, long: body.long, caption: body.caption || '' };
-      const res = await request('/sightings', sent, AWS_API);
-      return { ...sent, ...res, points: 0, nextSightingAt: 0 };
+      const res = await request(CONFIG.SIGHTINGS_API, '/sightings', sent);
+      if (!res.sightingId) throw new Error('The sightings service did not confirm your report. Please retry.');
+      return fromAws({ ...sent, ...res, nextSightingAt: 0 });
     },
     // Admin routes. The server authorizes every call from the verified session; nothing here grants access.
     admin: {
-      state: () => request('/admin/state'),
-      setMode: (enabled) => request('/admin/mode', {enabled}),
-      setCooldownBypass: (enabled) => request('/admin/cooldown', {enabled}),
-      users: (q) => request('/admin/users?q=' + encodeURIComponent(q)),
-      adjustPoints: (body) => request('/admin/points', body),
-      testEvents: () => request('/admin/test-events'),
-      saveTestEvent: (body) => request('/admin/test-events', body),
-      deleteTestEvent: (eventId) => request('/admin/test-events/delete', {eventId, confirm:true}),
-      testSightings: () => request('/admin/test-sightings'),
-      createTestSighting: (body) => request('/admin/test-sightings', body),
-      sightings: () => request('/admin/sightings'),
-      removeSighting: (sightingId, reason) => request('/admin/sightings/remove', {sightingId, reason, confirm:true}),
-      clearTestData: () => request('/admin/test-data/clear', {confirm:true}),
-      log: () => request('/admin/log'),
+      state: () => app('/admin/state'),
+      setMode: (enabled) => app('/admin/mode', {enabled}),
+      setCooldownBypass: (enabled) => app('/admin/cooldown', {enabled}),
+      users: (q) => app('/admin/users?q=' + encodeURIComponent(q)),
+      adjustPoints: (body) => app('/admin/points', body),
+      testEvents: () => app('/admin/test-events'),
+      saveTestEvent: (body) => app('/admin/test-events', body),
+      deleteTestEvent: (eventId) => app('/admin/test-events/delete', {eventId, confirm:true}),
+      testSightings: () => app('/admin/test-sightings'),
+      createTestSighting: (body) => app('/admin/test-sightings', body),
+      sightings: () => app('/admin/sightings'),
+      removeSighting: (sightingId, reason) => app('/admin/sightings/remove', {sightingId, reason, confirm:true}),
+      clearTestData: () => app('/admin/test-data/clear', {confirm:true}),
+      log: () => app('/admin/log'),
     },
   };
 })();

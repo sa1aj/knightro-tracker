@@ -11,15 +11,17 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/missions.css" />
+    <link rel="stylesheet" href="css/dither.css" />
+    <script src="js/dither.js"></script>
   </head>
   <body class="booting">
     <div id="map" class="map-root" aria-label="Map of UCF main campus with Knightro sightings"></div>
-    <div class="frame" aria-hidden="true"></div>
+    <div class="frame" aria-hidden="true"><i class="frame-corner tl"></i><i class="frame-corner tr"></i><i class="frame-corner bl"></i><i class="frame-corner br"></i></div>
     <div class="crt" aria-hidden="true"></div>
     <canvas id="fx" class="fx" aria-hidden="true"></canvas>
 
     <header class="plaque">
-      <h1><span>KNIGHTRO</span><img id="plaque-helm" alt="" /><span>TRACKER</span></h1>
+      <h1><span>KNIGHTRO</span><span class="knightro-window"><span class="knightro-anim" id="knightro-anim" role="img" aria-label="Knightro turning around"></span></span><span>TRACKER</span></h1>
     </header>
     <button type="button" class="tile corner l menu-toggle" id="btn-menu" aria-controls="navigation" aria-expanded="false" aria-label="Open menu" title="Menu">
       <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -52,7 +54,7 @@
     </nav>
     <button type="button" class="tile corner r" id="btn-sound" aria-pressed="true" aria-label="Sound on" title="Sound"><img data-icon="speaker" alt="" /></button>
 
-    <div class="status" id="status" role="status"><i class="dot" aria-hidden="true"></i><span id="status-text"></span></div>
+    <div class="status" id="status" role="status"><i class="dot" aria-hidden="true"></i><span id="status-text"></span><button type="button" class="retry-chip" id="btn-retry" hidden>RETRY</button></div>
     <div class="mission-bar" aria-label="Live missions">
       <button type="button" data-panel="bounties" id="mission-bounty">⚡ HIGH-VALUE BOUNTIES</button>
       <button type="button" data-panel="sense" id="mission-sense">◎ KNIGHT-SENSE</button>
@@ -92,6 +94,7 @@
     <script src="js/camera.js"></script>
     <script src="js/knight-sense.js"></script>
     <script src="js/admin.js"></script>
+    <script src="js/knightro-anim.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>

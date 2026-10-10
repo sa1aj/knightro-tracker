@@ -1,0 +1,167 @@
+/* ==========================================================================================
+   Pixel accents. Patterns come from js/dither.js (ordered Bayer dots, 2 CSS px per dot).
+   Restraint rules:
+   - Controls (buttons, tiles, title, ticker) have clean solid faces + the two-tone raised edge.
+     No dithered shading on them; the report button gets a light shine sweep instead.
+   - Dithering is used only as flat pattern accents: frame corners, Knightro's window, thin
+     separator strips and card edge stripes. Never behind text, inputs, the map or photos.
+   ========================================================================================== */
+:root { --ds: 8px 8px; }
+.frame-corner, .knightro-window, .panel-head::after, .nav-head::after, .nav-group, .nav-label::after,
+.feed-item, .event-row, .bounty-card, .sense-card, .report-card, .admin-item, .admin-pick, .leaderboard li,
+.mission-intro, .admin-sec, .toast, .empty-state img, .empty img, .loading-line::after {
+  image-rendering: pixelated;
+}
+
+/* ------------------------------------------------------------------ frame corners */
+.frame-corner {
+  position: absolute; width: 26px; height: 26px; z-index: 1;
+  background: var(--dt-lo-50) 0 0 / var(--ds), var(--gold);
+  box-shadow: inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo), 0 0 0 2px var(--ink);
+}
+.frame-corner.tl { top: -4px; left: -4px; clip-path: polygon(0 0, 100% 0, 100% 50%, 70% 50%, 70% 75%, 45% 75%, 45% 100%, 0 100%); }
+.frame-corner.tr { top: -4px; right: -4px; clip-path: polygon(0 0, 100% 0, 100% 100%, 55% 100%, 55% 75%, 30% 75%, 30% 50%, 0 50%); }
+.frame-corner.bl { bottom: -4px; left: -4px; clip-path: polygon(0 0, 45% 0, 45% 25%, 70% 25%, 70% 50%, 100% 50%, 100% 100%, 0 100%); }
+.frame-corner.br { bottom: -4px; right: -4px; clip-path: polygon(55% 0, 100% 0, 100% 100%, 0 100%, 0 50%, 30% 50%, 30% 25%, 55% 25%); }
+
+/* ------------------------------------------------------------------ title plaque + animated Knightro */
+.plaque { padding: 5px 14px 4px; }
+.plaque h1 {
+  gap: 12px;
+  /* Cleaner, lighter extrusion: one highlight step, two shade steps. */
+  text-shadow: -1px -1px 0 var(--bevel-hi), 1px 1px 0 var(--bevel-lo), 2px 2px 0 var(--bevel-lo);
+}
+.knightro-window {
+  position: relative; display: grid; place-items: center; flex: none;
+  width: 50px; height: 50px; margin-block: -6px;
+  /* An even, quiet dot field behind the figure — no fades. */
+  background: var(--dt-lo-25) 0 0 / var(--ds), var(--ink);
+  box-shadow: inset 3px 3px 0 var(--bevel-lo), inset -3px -3px 0 var(--bevel-hi), 0 0 0 3px var(--ink);
+}
+.knightro-anim { position: relative; display: block; width: 40px; aspect-ratio: 800.41 / 858.63; }
+.plaque .knightro-frame {
+  /* Overrides the old static-helmet rule (.plaque img: fixed width + wiggle) so every frame fills the same box. */
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  visibility: hidden; image-rendering: auto; pointer-events: none; animation: none;
+}
+.plaque .knightro-frame.on { visibility: visible; }
+
+/* ------------------------------------------------------------------ report button shine (clean face) */
+.report-btn::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 60px; left: -90px; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  transform: skewX(-20deg); animation: shine 3.6s ease-in-out 2s infinite;
+}
+.report-btn:hover::after { animation-duration: 1.4s; animation-delay: 0s; }
+.report-btn.active::after { display: none; }
+@keyframes shine { 0%, 70% { left: -90px; } 100% { left: calc(100% + 90px); } }
+
+/* Primary buttons get one quick shine pass on hover. */
+.px-btn:not(.alt):not(.danger) { position: relative; overflow: hidden; }
+.px-btn:not(.alt):not(.danger)::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 34px; left: -50px; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.6), transparent); transform: skewX(-20deg);
+}
+.px-btn:not(.alt):not(.danger):hover:not(:disabled)::after { animation: shineOnce 0.55s ease-out; }
+@keyframes shineOnce { from { left: -50px; } to { left: calc(100% + 50px); } }
+
+/* ------------------------------------------------------------------ status + retry */
+.retry-chip {
+  margin-left: 4px; padding: 3px 7px 1px; border: 0; cursor: pointer;
+  font: 10px var(--f-display); letter-spacing: 0.08em; color: var(--ink); background: var(--gold);
+  box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo);
+}
+.retry-chip:hover { background: var(--gold-hi); }
+.retry-chip:active { transform: translateY(1px); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi); }
+
+/* ------------------------------------------------------------------ panels (right) */
+.panel-head { position: relative; z-index: 2; }
+.panel-head::after {
+  /* A crisp 4px checker strip under the header — a separator, not a shadow. */
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 4px; margin-top: 3px; pointer-events: none;
+  background: var(--dt-lo-50) 0 0 / var(--ds) repeat-x;
+}
+.panel-body { padding-top: 18px; }
+
+/* ------------------------------------------------------------------ left menu */
+.nav-head { position: relative; }
+.nav-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+  background: var(--dt-lo-75) 0 0 / var(--ds) repeat-x;
+}
+.nav-group {
+  border-bottom: 0; box-shadow: none; padding-bottom: 16px;
+  background: var(--dt-lo-50) 0 100% / 8px 4px repeat-x; /* thin checker separator */
+}
+.nav-group:last-of-type { background: none; }
+.nav-label::after { height: 2px; background: var(--dt-lo-75) 0 0 / var(--ds) repeat-x; }
+.nav-foot { color: var(--gold); }
+
+/* ------------------------------------------------------------------ cards and lists */
+/* One shared look: an even dithered stripe on the left edge, clean text area, gold outline on hover. */
+.feed-item, .event-row, .bounty-card, .sense-card, .report-card, .admin-item, .admin-pick, .leaderboard li {
+  background: var(--dt-gold-50) 0 0 / 6px 8px repeat-y, var(--screen-2);
+  border: 0; padding-left: 18px;
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+.feed-item:hover, .event-row:hover, .bounty-card:hover, .admin-pick:hover {
+  box-shadow: inset 0 0 0 2px var(--gold), 4px 4px 0 rgba(0, 0, 0, 0.45);
+}
+.admin-pick.on, .admin-pick[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--gold); background-color: #2a2614; }
+
+/* Leaderboard: numbered rows; the podium is marked by the rank badge and a gold outline. */
+.leaderboard { padding-left: 0; list-style: none; display: grid; gap: 8px; }
+.leaderboard li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px 10px 18px; }
+.leaderboard li strong { float: none; }
+.leaderboard .rank {
+  width: 28px; height: 28px; display: grid; place-items: center; font: 12px var(--f-display); color: var(--gold); background: var(--ink);
+  box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo);
+}
+.leaderboard li.top .rank { color: var(--ink); background: var(--gold); }
+.leaderboard li.top-1 { box-shadow: inset 0 0 0 2px var(--gold); background-color: #2a2614; }
+
+/* Section separators inside panels: a thin checker strip instead of a flat rule. */
+.mission-intro, .admin-sec {
+  border-top: 0; box-shadow: none; padding-top: 14px;
+  background: var(--dt-lo-50) 0 0 / 8px 4px repeat-x;
+}
+
+/* ------------------------------------------------------------------ states: loading, empty, notice, error */
+.loading-line { display: flex; align-items: center; gap: 10px; }
+.loading-line::after {
+  content: ''; width: 32px; height: 8px; flex: none;
+  background: var(--dt-gold-50) 0 0 / var(--ds);
+  animation: ditherMarch 0.6s steps(4) infinite;
+}
+@keyframes ditherMarch { to { background-position: 8px 0; } }
+.empty-state { display: grid; justify-items: center; gap: 10px; padding: 16px 12px; text-align: center; color: var(--dim); }
+.empty-state img, .empty img {
+  width: 56px; padding: 8px; background: var(--dt-lo-25) 0 0 / var(--ds), var(--ink);
+  box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi);
+}
+.empty img { width: 48px; }
+.notice-box { display: grid; gap: 6px; }
+.notice-box strong { font: 11px var(--f-display); letter-spacing: 0.1em; color: var(--warn); }
+.error-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.error-box > span { flex: 1 1 180px; }
+
+/* ------------------------------------------------------------------ toasts */
+.toast { padding-top: 18px; background: var(--dt-gold-50) 0 0 / 8px 4px repeat-x, var(--ink); }
+.toast.bad { background: var(--dt-lo-50) 0 0 / 8px 4px repeat-x, var(--ink); }
+
+/* ------------------------------------------------------------------ phones */
+@media (max-width: 720px) {
+  .frame-corner { width: 20px; height: 20px; }
+  /* Compact plaque: must fit between the corner buttons and end above the status chip. */
+  .plaque { padding: 3px 8px 4px; }
+  .plaque h1 { gap: 6px; font-size: 12px; letter-spacing: 0.04em; }
+  .knightro-window { width: 32px; height: 32px; margin-block: -6px; }
+  .knightro-anim { width: 25px; }
+  .status { top: 52px; }
+}
+@media (max-width: 360px) {
+  .plaque { padding-inline: 6px; }
+  .plaque h1 { font-size: 10px; gap: 4px; letter-spacing: 0.02em; }
+  .knightro-window { width: 28px; height: 28px; margin-block: -5px; }
+  .knightro-anim { width: 22px; }
+}

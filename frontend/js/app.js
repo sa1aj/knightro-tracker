@@ -86,13 +86,12 @@
   const myPosts = new Set(); // ids this device just posted, so we don't announce them as "new"
 
   // ---------- map (created once, never replaced) ----------
+  const MAX_ZOOM = 19; // OpenStreetMap's standard tiles stop at zoom 19.
   const map = L.map('map', {
     center: [campus.center.lat, campus.center.lng],
-    zoom: 16,
-    minZoom: 14, maxBoundsViscosity: 1,
-    maxZoom: 19,
+    zoom: 16, minZoom: 13, maxZoom: MAX_ZOOM,
+    maxBoundsViscosity: 0.9,
     zoomControl: false,
-    maxBounds: campusBounds(campus),
   });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -163,7 +162,10 @@
               openPanel('stack');
             } else openMapItem(marker.items[0]);
           })
-          .on('mouseover', () => sfx.play('hover')).addTo(map);
+          .on('mouseover', () => sfx.play('hover'))
+          // Leaflet already turns Enter into a click on focused markers; Space should work too.
+          .on('keypress', (e) => { if (e.originalEvent.key === ' ') { e.originalEvent.preventDefault(); marker.fire('click'); } })
+          .addTo(map);
         markers.set(id, marker);
       }
       marker.items = group.items;
@@ -224,18 +226,28 @@
       if (age) age.textContent = marker.items.length > 1 ? 'OPEN STACK' : marker.items[0].isTest ? 'TEST' : marker.items[0].kind === 'bounty' ? 'BOUNTY ' + countdown(marker.items[0].expiresAt) : marker.items[0].kind === 'event' ? 'LIKELY EVENT' : shortAgo(marker.items[0]);
     }
   }
-  function constrainCampus() {
-    const bounds = L.latLngBounds(campusBounds(campus));
-    map.setMinZoom(Math.min(19, Math.ceil(map.getBoundsZoom(bounds, true))));
-    map.setMaxBounds(bounds);
-    map.panInsideBounds(bounds, {animate:false});
+  // Zoom limits come from how much of the campus fits on screen. (The old code used
+  // getBoundsZoom(bounds, true) — "zoom in until the *screen* fits inside the campus box" — so small
+  // campuses forced the minimum zoom up to the maximum: Downtown was locked at 19/19.)
+  function campusView(c) {
+    const bounds = L.latLngBounds(campusBounds(c));
+    const fit = map.getBoundsZoom(bounds, false); // the whole campus is visible at this zoom
+    const minZoom = Math.max(13, Math.min(16, fit - 1));
+    return { bounds, minZoom, startZoom: Math.min(18, Math.max(minZoom, fit + 1)) };
+  }
+  /** Apply the campus limits. moveTo=true also moves there (once per campus switch). */
+  function applyCampusLimits(moveTo = false) {
+    const view = campusView(campus);
+    map.setMaxBounds(null); // drop the previous campus box first so nothing snaps back
+    map.setMinZoom(view.minZoom);
+    map.setMaxZoom(MAX_ZOOM);
+    if (moveTo) map.setView([campus.center.lat, campus.center.lng], view.startZoom, {animate:false});
+    map.setMaxBounds(view.bounds.pad(0.5)); // room to pan past the campus edge
+    return view;
   }
   function switchCampus(id) {
     campus = campuses.find((c) => c.id === id) || campuses[0];
-    map.setMaxBounds(null);
-    map.setMinZoom(14);
-    map.setView([campus.center.lat, campus.center.lng], 16, {animate:false});
-    constrainCampus();
+    applyCampusLimits(true);
     $('#campus-select').value = campus.id;
     $('#map').setAttribute('aria-label', 'Map of UCF ' + campus.name + ' with sightings and events');
     if (state.report && !mapUtils.contains(campus, state.report.pin)) {
@@ -244,8 +256,9 @@
     render();
   }
   map.on('zoomend moveend', () => renderMarkers());
-  map.on('resize', constrainCampus);
-  constrainCampus();
+  // A new container size can change what "fits"; update limits only, never reset the user's view.
+  map.on('resize', () => applyCampusLimits(false));
+  applyCampusLimits(true);
   $('#campus-select').append(...campuses.map((c) => h('option', {value:c.id}, c.name)));
   $('#campus-select').addEventListener('change', (e) => switchCampus(e.target.value));
 
@@ -274,6 +287,7 @@
 
   // ---------- data ----------
   function applySession(session) {
+    state.accounts = session.accounts !== false;
     state.user = session.user; state.nextSightingAt = session.nextSightingAt;
     state.sessionLoaded = true; state.emailDelivery = session.emailDelivery;
     const wasOn = adminOn();
@@ -340,7 +354,7 @@
 
   function openPanel(name, backTo = null) {
     setMenu(false);
-    if (!CONFIG.GUEST_MODE && ['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
+    if (CONFIG.ACCOUNTS && ['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
     if (name === 'report' && state.panel !== 'report' && state.nextSightingAt > nowSec()) {
       fx.toast('TAKE A BREATHER', 'Your next report unlocks in ' + Math.ceil(state.nextSightingAt - nowSec()) + ' seconds.', 'info');
       return;
@@ -425,8 +439,8 @@
 
   async function submitReport() {
     const r = state.report;
-    if (!r || r.submitting || !onCampus(r.pin) || !r.photo) return;
-    if (r.captureExpiresAt <= nowSec()) { r.camera?.expire(); updateCooldown(); return; }
+    if (!r || r.submitting || !onCampus(r.pin) || (CONFIG.ACCOUNTS && !r.photo)) return;
+    if (CONFIG.ACCOUNTS && r.captureExpiresAt <= nowSec()) { r.camera?.expire(); updateCooldown(); return; }
     r.submitting = true;
     r.error = '';
     sfx.play('click');
@@ -445,7 +459,7 @@
       const btn = $('#btn-report').getBoundingClientRect();
       fx.burst(btn.left + btn.width / 2, btn.top, 120);
       await refresh({ quiet: true });
-      fx.toast('SIGHTING POSTED!', '+' + res.points + ' point(s). Your pin is live in Recent Sightings.', 'good');
+      fx.toast('SIGHTING POSTED!', (res.points == null ? '' : '+' + res.points + ' point(s). ') + 'Your pin is live in Recent Sightings.', 'good');
     } catch (err) {
       if (state.report !== r) return;
       r.error = err.message;
@@ -463,7 +477,7 @@
   function reportView(r) {
     const idx = r.step === 'location' ? 0 : 1;
     const steps = h('ol', { class: 'steps' },
-      [['location', 'LOCATION'], ['details', 'PHOTO PROOF']].map(([k, label], i) =>
+      [['location', 'LOCATION'], ['details', CONFIG.ACCOUNTS ? 'PHOTO PROOF' : 'DETAILS']].map(([k, label], i) =>
         h('li', { class: i === idx ? 'on' : i < idx ? 'done' : '', 'aria-current': i === idx ? 'step' : null }, `${i + 1}. ${label}`)
       )
     );
@@ -492,6 +506,24 @@
             onclick: () => { sfx.play('switch'); r.step = 'details'; render(); },
           }, 'CONFIRM LOCATION')
         ),
+      ];
+    }
+
+    if (r.step === 'details' && !CONFIG.ACCOUNTS) {
+      // Static GitHub Pages copy: the shared sightings service stores location + caption only.
+      const counter = h('span', { class: 'muted small counter' }, `${r.caption.length}/${CONFIG.CAPTION_MAX}`);
+      const ta = h('textarea', { id: 'rep-caption', maxlength: CONFIG.CAPTION_MAX, placeholder: 'Knightro is near the Student Union' });
+      ta.value = r.caption;
+      ta.addEventListener('input', () => { r.caption = ta.value; counter.textContent = `${ta.value.length}/${CONFIG.CAPTION_MAX}`; sfx.play('type'); });
+      return [
+        steps,
+        h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
+        h('p', { class: 'msg warn' }, 'Static demo: your sighting posts its location and caption to the shared map. Photo proof, accounts and points need the Knightro app server.'),
+        h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
+        r.error && h('div', { class: 'msg err', role: 'alert' }, r.error),
+        h('div', { class: 'panel-foot' },
+          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
+          h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting, onclick: submitReport }, r.submitting ? 'POSTING…' : 'POST SIGHTING')),
       ];
     }
 
@@ -530,7 +562,7 @@
     return [
       h('div', { class: 'victory' }, h('img', { src: IMG.helm, alt: '' }), h('h3', {}, 'SIGHTING POSTED')),
       h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
-      h('div', { class: 'msg', role: 'status' }, '+' + r.result.points + ' point(s) awarded. Your pin is live on the map and in Recent Sightings.'),
+      h('div', { class: 'msg', role: 'status' }, (r.result.points == null ? 'Saved to the shared sightings map. ' : '+' + r.result.points + ' point(s) awarded. ') + 'Your pin is live on the map and in Recent Sightings.'),
       h('div', { class: 'panel-foot' },
         h('button', { type: 'button', class: 'px-btn alt', onclick: closePanel }, 'CLOSE'),
         h('button', {
@@ -544,10 +576,20 @@
     ];
   }
 
+  /** Failed request: say what went wrong and offer a retry. */
+  function errorBox(message, retry) {
+    return h('div', { class: 'msg err error-box', role: 'alert' }, h('span', {}, message),
+      retry && h('button', { type: 'button', class: 'px-btn sm alt', onclick: () => { sfx.play('click'); retry(); } }, 'RETRY'));
+  }
+  /** A feature this deployment doesn't include (static GitHub Pages copy). Not an error, no retry. */
+  function unavailableBox(feature) {
+    return h('div', { class: 'msg warn notice-box' }, h('strong', {}, 'NOT ON THIS SITE'),
+      h('span', {}, feature + ' needs the Knightro app server. This GitHub Pages copy is a static demo: it shows live sightings and likely Knightro events only.'));
+  }
   function recentView() {
-    if (!state.loaded) return [h('p', { class: 'muted' }, 'Loading sightings…')];
+    if (!state.loaded) return [h('p', { class: 'muted loading-line' }, 'Loading sightings…')];
     if (state.netError && !state.hasData) {
-      return [h('h3', {}, "CAN'T LOAD SIGHTINGS"), h('div', { class: 'msg err' }, `${state.netError} Retrying every few seconds.`)];
+      return [h('h3', {}, "CAN'T LOAD SIGHTINGS"), errorBox(state.netError, () => refresh())];
     }
     if (!campusSightings().length) {
       return [
@@ -578,7 +620,7 @@
       h('div', { class: 'label' }, s.sightingId === campusSightings()[0]?.sightingId ? 'Latest sighting' : 'Sighting'),
       h('figure', { class: 'photo-fig' },
         h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: s.photoUrl ? 'Reported Knightro sighting photo' : 'Illustration of Knightro' }),
-        h('figcaption', { class: 'label' }, s.photoUrl ? (s.status === 'confirmed' ? 'Photo confirmed' : 'Community photo report') + ' · ' + s.points + ' point(s)' : s.isTest ? 'Test sighting · illustration' : 'Legacy sighting · illustration')
+        h('figcaption', { class: 'label' }, s.photoUrl ? (s.status === 'confirmed' ? 'Photo confirmed' : 'Community photo report') + ' · ' + s.points + ' point(s)' : s.isTest ? 'Test sighting · illustration' : s.source === 'aws' ? 'Shared map sighting · no photo' : 'Legacy sighting · illustration')
       ),
       h('div', { class: `fresh-note ${fresh ? 'live' : 'old'}` },
         fresh ? `SPOTTED ${timeAgo(s).toUpperCase()}. HE MAY STILL BE NEARBY.` : `SEEN ${timeAgo(s).toUpperCase()}. HE MAY HAVE MOVED ON.`),
@@ -615,11 +657,12 @@
     if (label) label.textContent = remaining ? 'Next sighting available in ' + remaining + ' seconds.' : 'You can report a sighting now.';
     const submit = $('#rep-submit');
     if (submit && !state.report?.submitting) {
-      submit.disabled = remaining > 0 || !state.report?.photo || state.report.captureExpiresAt <= nowSec();
-      submit.textContent = remaining ? 'WAIT ' + remaining + 's' : 'SUBMIT PHOTO';
+      submit.disabled = remaining > 0 || (CONFIG.ACCOUNTS && (!state.report?.photo || state.report.captureExpiresAt <= nowSec()));
+      submit.textContent = remaining ? 'WAIT ' + remaining + 's' : CONFIG.ACCOUNTS ? 'SUBMIT PHOTO' : 'POST SIGHTING';
     }
   }
   function accountView() {
+    if (!CONFIG.ACCOUNTS) return [unavailableBox('Signing in')];
     if (state.user) return [
       h('h3', {}, 'WELCOME, ' + state.user.displayName.toUpperCase()),
       h('p', {}, state.user.email),
@@ -728,7 +771,7 @@
     return [
       h('p',{class:'small'},'Only events with evidence of a possible Knightro appearance. Pins appear within 30 minutes of the start. These are building-level hints, not confirmed sightings.'),
       state.eventsGeneratedAt && h('p',{class:'muted small'},'Last synced ' + eventTime(state.eventsGeneratedAt) + ' ET'),
-      state.eventsError && h('div',{class:'msg err'},state.eventsError),
+      state.eventsError && errorBox(state.eventsError, loadEvents),
       ...activeEvents().map(eventRow),
       !activeEvents().length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances in the current feed.'),
       h('button',{type:'button',class:'px-btn alt',onclick:loadEvents},'REFRESH EVENTS'),
@@ -758,17 +801,19 @@
     ];
   }
   async function loadLeaderboard() {
+    if (!CONFIG.ACCOUNTS) { state.leadersLoaded = true; return; }
     try { const data = await api.getLeaderboard(); state.leaders = data.leaders || []; state.leadersError = ''; }
     catch (err) { state.leadersError = err.message; }
     finally { state.leadersLoaded = true; if (state.panel === 'leaderboard') render(); }
   }
   function leaderboardView() {
-    if (!state.leadersLoaded) return [h('p',{},'Loading the Knight leaderboard…')];
+    if (!CONFIG.ACCOUNTS) return [unavailableBox('The leaderboard')];
+    if (!state.leadersLoaded) return [h('p',{class:'muted loading-line'},'Loading the Knight leaderboard…')];
     return [
       h('p',{class:'small'},'All-time campus spotters. Live photo reports earn 1 point; the first daily bounty claim earns 2.'),
-      state.leadersError && h('div',{class:'msg err'},state.leadersError),
-      !state.leaders.length && h('p',{class:'msg'},'No sightings yet. Be the first Knight on the board!'),
-      h('ol',{class:'leaderboard'},state.leaders.map((person) => h('li',{},h('span',{},person.displayName),h('strong',{},person.score + ' pts')))),
+      state.leadersError && errorBox(state.leadersError, loadLeaderboard),
+      !state.leadersError && !state.leaders.length && h('div',{class:'empty-state'},h('img',{src:IMG.helm,alt:''}),h('p',{},'No points on the board yet. Be the first Knight!')),
+      h('ol',{class:'leaderboard'},state.leaders.map((person, i) => h('li',{class: i < 3 ? 'top top-' + (i + 1) : null},h('b',{class:'rank'},String(i + 1)),h('span',{},person.displayName),h('strong',{},person.score + ' pts')))),
       h('button',{type:'button',class:'px-btn alt',onclick:loadLeaderboard},'REFRESH LEADERBOARD'),
     ];
   }
@@ -782,6 +827,7 @@
   let gameInFlight = false, alertsLoaded = false;
   const seenAlerts = new Set();
   async function loadGame() {
+    if (!CONFIG.ACCOUNTS) { state.gameLoaded = true; return; }
     if (gameInFlight) return;
     gameInFlight = true;
     try {
@@ -817,11 +863,12 @@
       h('b', {'data-expires':b.expiresAt,class:'bounty-clock'}, countdown(b.expiresAt)));
   }
   function bountiesView() {
+    if (!CONFIG.ACCOUNTS) return [unavailableBox('Daily bounties')];
     const daily = activeBounties().filter(b => b.campus === campus.id);
     return [
       h('div',{class:'mission-intro'},h('span',{class:'eyebrow'},'TODAY’S CAMPUS CHALLENGE'),h('h3',{},'All day. Double points.'),h('p',{},'Spot Knightro in today’s shaded section' + (campus.id === 'main' ? ' across five buildings and their connecting paths.' : '.') + ' Resets at campus midnight.')),
       h('p',{class:'msg'},'First bounty report: 2 points. Later reports: 1 point. The section is a challenge, not a guaranteed Knightro location.'),
-      state.gameError && h('p',{class:'msg err'},state.gameError),
+      state.gameError && errorBox(state.gameError, loadGame),
       ...daily.map(bountyRow),
       !daily.length && h('p',{class:'muted'},campus.id === 'rosen' ? 'Daily bounties are available on Main and Downtown. Rosen sightings earn 1 point.' : state.gameLoaded ? 'Today’s bounty is being prepared. Checking again shortly.' : 'Checking current bounties…'),
       campus.id === 'downtown' && h('p',{class:'small muted'},'This section covers Downtown’s two mapped academic buildings.'),
@@ -829,9 +876,10 @@
     ];
   }
   function senseView() {
+    if (!CONFIG.ACCOUNTS) return [unavailableBox('Knight-Sense alerts')];
     return [
       h('div',{class:'mission-intro'},h('span',{class:'eyebrow'},'TRUST YOUR KNIGHT-SENSE'),h('h3',{},'A hint. A building. A head start.'),h('p',{},'A sudden cluster of verified app openings or an upcoming likely mascot event can trigger a campus-wide alert. Hints name a building and never reveal users’ exact locations.')),
-      state.gameError && h('p',{class:'msg err'},state.gameError),
+      state.gameError && errorBox(state.gameError, loadGame),
       ...state.alerts.filter(a => a.expiresAt > nowSec()).map(a => h('article',{class:'sense-card'},h('strong',{},a.message),h('p',{class:'small muted'},a.reason + ' · Unconfirmed hint'),h('span',{'data-expires':a.expiresAt,class:'small'},countdown(a.expiresAt)))),
       !state.alerts.some(a => a.expiresAt > nowSec()) && h('p',{class:'msg'},'All quiet. Keep an eye on the map for the next signal.'),
       h('button',{type:'button',class:'px-btn',onclick:async () => {
@@ -856,13 +904,15 @@
     ];
   }
   async function loadReports() {
+    if (!CONFIG.ACCOUNTS) { state.reportsLoaded = true; return; }
     try { state.reports = (await api.getReports()).reports; state.reportsError = ''; }
     catch (error) { state.reportsError = error.message; }
     finally { state.reportsLoaded = true; if (state.panel === 'reports') render(); }
   }
   function reportsView() {
+    if (!CONFIG.ACCOUNTS) return [unavailableBox('Photo reports')];
     return [h('p',{class:'small'},'Your live photo reports and awarded points. Reports appear immediately; removed reports earn no points.'),
-      state.reportsError && h('p',{class:'msg err'},state.reportsError),
+      state.reportsError && errorBox(state.reportsError, loadReports),
       ...state.reports.map(r => h('article',{class:'report-card'},h('strong',{},r.placeLabel),h('span',{class:'report-status '+r.status},r.status.toUpperCase()),h('span',{class:'small'},r.status === 'pending' ? r.eligiblePoints + ' point(s) eligible after confirmation' : r.points + ' point(s) awarded'))),
       !state.reports.length && h('p',{class:'msg'},state.reportsLoaded ? 'No photo reports yet. Spot Knightro and take a photo.' : 'Loading your reports…'),
       h('button',{type:'button',class:'px-btn alt',onclick:loadReports},'REFRESH REVIEW STATUS')];
@@ -955,9 +1005,10 @@
     $('#ticker').classList.toggle('bad', !!state.netError);
 
     $('#status-text').textContent = !state.loaded ? 'CONNECTING…' : state.netError ? 'OFFLINE' : `LIVE · ${count} ACTIVE`;
+    $('#btn-retry').hidden = !state.netError;
     $('#status').classList.toggle('bad', !!state.netError);
     $('#account-label').textContent = state.user ? state.user.displayName : 'Sign in / create account';
-    $('#account-sub').textContent = state.user ? (state.user.score ?? 0) + ' pts · account & sign out' : 'UCF email · no password';
+    $('#account-sub').textContent = !CONFIG.ACCOUNTS ? 'Needs the app server' : state.user ? (state.user.score ?? 0) + ' pts · account & sign out' : 'UCF email · no password';
     document.querySelectorAll('.navigation [data-panel]').forEach((b) => b.toggleAttribute('aria-current', b.dataset.panel === state.panel));
     const allowed = !!(state.admin && state.admin.allowed);
     $('#nav-admin').hidden = !allowed;
@@ -970,11 +1021,17 @@
   }
 
   // ---------- chrome ----------
-  $('#plaque-helm').src = IMG.helm;
+  window.KT.knightroAnim.start($('#knightro-anim'), {
+    frames: CONFIG.KNIGHTRO_FRAMES, fps: CONFIG.KNIGHTRO_FPS, holdFirstMs: CONFIG.KNIGHTRO_HOLD_FRONT_MS,
+  });
+  $('#btn-retry').addEventListener('click', () => {
+    sfx.play('click');
+    refresh(); loadEvents(); loadGame();
+  });
   document.querySelectorAll('img[data-icon]').forEach((img) => (img.src = IMG[img.dataset.icon]));
   $('#nav-helm').src = IMG.helm;
   function recenterMap() {
-    map.flyTo([campus.center.lat, campus.center.lng], map.getMinZoom(), { duration: 0.7 });
+    map.flyTo([campus.center.lat, campus.center.lng], campusView(campus).startZoom, { duration: 0.7 });
     sfx.play('whoosh');
     fx.replay(recenterButton, 'spin');
   }
@@ -1031,6 +1088,6 @@
   refresh();
   loadEvents();
   loadGame();
-  setInterval(() => { if (!document.hidden) loadGame(); }, 15000);
+  if (CONFIG.ACCOUNTS) setInterval(() => { if (!document.hidden) loadGame(); }, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadGame(); window.KT.sense.presence(state.user); } });
 })();

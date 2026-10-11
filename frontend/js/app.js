@@ -265,11 +265,10 @@
         const art = first.kind === 'sighting'
           ? pinArt
           : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
-        const test = group.items.some((item) => item.isTest);
-        const pending = first.kind === 'sighting' && !isPublic(first);
+        const pending = first.kind === 'sighting' && !first.isTest && !isPublic(first);
         const size = first.kind === 'sighting' ? [PIN_W, PIN_H] : first.kind === 'event' ? [EVENT_PIN, EVENT_PIN] : [66, 74];
         marker.setIcon(L.divIcon({
-          className: 'kt-pin asset-pin ' + (first.kind === 'sighting' ? 'sighting-pin ' : '') + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (test ? 'test-pin ' : '') + (pending ? 'pending-pin ' : ''),
+          className: 'kt-pin asset-pin ' + (first.kind === 'sighting' ? 'sighting-pin ' : '') + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (pending ? 'pending-pin ' : ''),
           html: '<div class="kt-pin-body" data-frame="' + (eventSelected || marker.hovered ? 3 : 1) + '"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
           // Medallions (sightings and events) are centred on their point; bounty tiles keep their bottom anchor.
           iconSize: size, iconAnchor: first.kind === 'bounty' ? [33, 72] : [size[0] / 2, size[1] / 2],
@@ -284,7 +283,7 @@
       }
       // Toggle selection on the existing element so hover/selected states can ease back smoothly.
       marker.getElement()?.classList.toggle('sel', selected);
-      const label = multiple ? group.items.length + ' nearby sightings, event hints, and missions. Open stack.' : first.kind === 'sighting' ? 'Knightro sighting ' + (first.placeLabel || placeName(first.lat, first.long)) : first.kind === 'bounty' ? 'Daily double-point bounty: ' + first.sectorName : first.title;
+      const label = multiple ? group.items.length + ' nearby sightings, event hints, and missions. Open stack.' : first.kind === 'sighting' ? 'Knightro sighting ' + (first.placeLabel || placeName(first.lat, first.long)) : first.kind === 'bounty' ? 'Daily double-point bounty: ' + first.sectorName : first.isTest ? first.title.replace(/\s*\((?:test|demo)\)\s*$/i, '') : first.title;
       marker.getElement()?.setAttribute('aria-label', label);
       marker.getElement()?.setAttribute('title', label);
       marker.setZIndexOffset(selected ? 800 : first.kind === 'sighting' ? 500 : 0);
@@ -307,8 +306,8 @@
       marker.setOpacity(opacity);
       const age = marker.getElement()?.querySelector('.age');
       const one = marker.items[0];
-      if (age) setNum(age, marker.items.length > 1 ? 'OPEN STACK' : one.isTest ? 'TEST' : one.kind === 'bounty' ? 'BOUNTY ' + countdown(one.expiresAt)
-        : one.kind === 'event' ? 'LIKELY EVENT' : !isPublic(one) ? 'PENDING · ' + shortAgo(one) : shortAgo(one));
+      if (age) setNum(age, marker.items.length > 1 ? 'OPEN STACK' : one.kind === 'bounty' ? 'BOUNTY ' + countdown(one.expiresAt)
+        : one.kind === 'event' ? 'LIKELY EVENT' : !one.isTest && !isPublic(one) ? 'PENDING · ' + shortAgo(one) : shortAgo(one));
     }
   }
   // Zoom limits come from how much of the campus fits on screen. (The old code used

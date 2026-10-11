@@ -371,3 +371,81 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 }
 .asset-pin.sighting-pin.spotlight .kt-pin-body::after { animation-name: spotRingRound; }
 @keyframes spotRingRound { from { transform: scale(0.95); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
+
+/* ==========================================================================================
+   Report flow: photo → location → map placement → submit
+   ========================================================================================== */
+ol.steps.three { grid-template-columns: repeat(3, 1fr); }
+.report-photo { margin: 0; display: grid; gap: 8px; justify-items: start; }
+.report-photo img { width: 100%; max-height: 220px; object-fit: contain; background: var(--ink); border: 3px solid var(--ink); box-shadow: 0 0 0 2px var(--line); }
+.report-photo.review img { max-height: 160px; }
+.place-main { width: 100%; min-height: 52px; font-size: 14px; }
+.loc-alt { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.loc-summary {
+  display: grid; gap: 4px; justify-items: start; padding: 10px 12px; background: var(--ink);
+  border-left: 4px solid var(--gold); box-shadow: inset 0 0 0 2px var(--line);
+}
+.loc-summary strong { color: var(--gold-hi); }
+.loc-summary .px-btn { margin-top: 6px; }
+/* The current step's main action stays reachable at the bottom of the report panel while its content scrolls. */
+body.report-open .panel-body > .panel-foot {
+  position: sticky; bottom: 0; z-index: 2; margin: 4px -14px -14px; padding: 10px 14px calc(10px + var(--safe-b));
+  background: var(--screen); box-shadow: 0 -3px 0 var(--line);
+}
+
+/* ---------- placement mode ---------- */
+.place-ui { position: fixed; inset: 0; z-index: 700; pointer-events: none; }
+.place-ui[hidden] { display: none !important; }
+.place-hint, .place-bar { pointer-events: auto; animation: placeIn 0.22s var(--ease-ui) backwards; }
+@keyframes placeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* The pin's tip (bottom-centre) is the exact centre of the screen = the centre of the full-screen map. */
+.place-pin { position: absolute; left: 50%; top: 50%; width: 46px; height: 58px; transform: translate(-50%, -100%); pointer-events: none; }
+.place-pin img { display: block; width: 100%; height: 100%; transform-origin: 50% 100%; transition: transform 140ms var(--ease-ui); filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.45)); image-rendering: auto; }
+body.map-moving .place-pin img { transform: translateY(-10px); } /* lifts while the map moves, drops when it stops */
+.place-shadow { position: absolute; left: 50%; bottom: -3px; width: 12px; height: 6px; margin-left: -6px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); }
+.place-hint {
+  position: absolute; left: 50%; top: calc(var(--frame) + 68px); transform: translateX(-50%);
+  width: min(460px, calc(100vw - 2 * var(--frame) - 24px)); display: grid; gap: 2px; text-align: center;
+  padding: 8px 12px 7px; background: var(--ink); color: var(--phos); box-shadow: 0 0 0 3px var(--gold), 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+.place-hint strong { font: 11px var(--f-display); letter-spacing: 0.06em; color: var(--gold); }
+.place-hint.warn strong { color: var(--warn); }
+#place-where { font-size: 14px; }
+#place-where.bad { color: var(--bad); }
+.place-bar {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--frame) + var(--safe-b) + 12px);
+  width: min(560px, calc(100vw - 2 * var(--frame) - 16px)); display: grid; grid-template-columns: auto auto 1fr; gap: 10px;
+  padding: 10px; background: var(--screen); border: 4px solid; border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+  outline: 3px solid var(--ink); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4);
+}
+.place-bar .px-btn { min-height: 46px; }
+@keyframes placeInX { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translateX(-50%); } }
+.place-hint, .place-bar { animation-name: placeInX; }
+/* Everything unrelated steps aside so the map is mostly unobstructed. */
+body.placing .panel-shell { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.18s ease, visibility 0s linear 0.18s; }
+body.placing .dock, body.placing .ticker, body.placing .mission-bar, body.placing .status,
+body.placing #btn-menu, body.placing .navigation { opacity: 0; visibility: hidden; pointer-events: none; }
+body.placing #map { cursor: grab; }
+body.placing .leaflet-bottom.leaflet-right { top: auto; bottom: calc(var(--frame) + var(--safe-b) + 90px); }
+
+@media (max-width: 720px) {
+  .place-hint { top: var(--row2); }
+  /* Two rows: Back + My Location, then the primary Confirm across the full width (thumb reach). */
+  .place-bar { grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
+  .place-bar #place-confirm { grid-column: 1 / -1; order: 3; }
+  body.placing .leaflet-bottom.leaflet-left { bottom: calc(var(--frame) + var(--safe-b) + 150px); }
+  body.placing .leaflet-bottom.leaflet-right { bottom: calc(var(--frame) + var(--safe-b) + 140px); }
+  /* The report panel is nearly full screen: from just under the top row to the bottom frame. */
+  body.report-open .panel-shell { top: calc(var(--row1) + 50px); height: auto; bottom: calc(var(--frame) + var(--safe-b)); }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .place-hint { top: var(--row2); width: min(420px, 60vw); padding: 5px 10px 4px; }
+  .place-bar { grid-template-columns: auto auto 1fr; padding: 6px; width: min(560px, 80vw); bottom: calc(var(--frame) + var(--safe-b) + 6px); }
+  .place-bar .px-btn { min-height: 40px; }
+  .place-bar #place-confirm { grid-column: auto; order: 0; }
+  body.placing .leaflet-bottom.leaflet-left { top: calc(var(--chrome-bottom) + 6px); bottom: auto; }
+  body.placing .leaflet-bottom.leaflet-right { bottom: calc(var(--frame) + var(--safe-b) + 70px); }
+}
+/* A keyboard-open sheet rises over the top row; keep it above the corner buttons so nothing overlaps its header. */
+body.keyboard-open .panel-shell { z-index: 840; }
+.report-pin .drop-art { transform-origin: 50% 100%; }

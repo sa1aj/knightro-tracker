@@ -88,6 +88,17 @@
       <div class="panel-body" id="panel-body"></div>
     </aside>
 
+    <!-- Report map-placement mode: the map moves under a fixed pin whose tip is the map centre. -->
+    <div class="place-ui" id="place-ui" hidden>
+      <div class="place-hint" id="place-hint" role="status"><strong id="place-hint-text">Move the map to place your sighting.</strong><span id="place-where"></span></div>
+      <div class="place-pin" aria-hidden="true"><i class="place-shadow"></i><img id="place-pin-img" alt="" width="46" height="58" /></div>
+      <div class="place-bar" role="group" aria-label="Place your sighting">
+        <button type="button" class="px-btn alt" id="place-back">BACK</button>
+        <button type="button" class="px-btn alt" id="place-gps">MY LOCATION</button>
+        <button type="button" class="px-btn" id="place-confirm">CONFIRM LOCATION</button>
+      </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="js/config.js"></script>
     <script src="js/pixel.js"></script>

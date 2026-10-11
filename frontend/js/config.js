@@ -43,6 +43,8 @@ window.KT = window.KT || {};
     PIN_IMAGE: 'assets/photos/images/knightro-pin-map.svg', PIN_SIZE: [50, 50],
     // Shown while a map pin is hovered (or keyboard-focused / being dragged). Same square frame as PIN_IMAGE.
     PIN_HOVER_IMAGE: 'assets/photos/images/knightro-pin-map-hover.svg',
+    // Report location pin (teardrop): its tip is the bottom-centre of the image, i.e. the exact chosen point.
+    PLACE_PIN_IMAGE: 'assets/photos/images/knightro-pin.svg', PLACE_PIN_SIZE: [46, 58],
     EVENT_FRAMES: ['assets/photos/images/eventframe1-03.svg', 'assets/photos/images/eventframe2-05.svg', 'assets/photos/images/eventframe3-04.svg'],
     // Top-bar Knightro turnaround (8 supplied frames, in filename order). Adjust speed here.
     KNIGHTRO_FRAMES: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => 'assets/photos/knightro%20animation/knightroanim-0' + n + '.svg'),

@@ -119,6 +119,9 @@ Deno.serve(async req=> {
       data.title=text(data,'title',3,80);data.description=text(data,'description',0,400,true);
       const now=Math.floor(Date.now()/1000);data.endsAt??=data.startsAt+3600;
       if(!Number.isInteger(data.startsAt)||!Number.isInteger(data.endsAt)||data.startsAt<now-86400||data.startsAt>now+60*86400||data.endsAt<=data.startsAt||data.endsAt>data.startsAt+48*3600) throw new APIError(400,'Choose valid event start and end times.');
+      // Whether regular users may see this test event. Strict boolean; absent means hidden (admins only).
+      if(data.visible!==undefined&&typeof data.visible!=='boolean') throw new APIError(400,'Choose whether the test event is visible.');
+      data.visible=data.visible===true;
     }
     if(['admin/test-events','admin/test-events/delete'].includes(route)&&data.eventId!==undefined) {
       if(typeof data.eventId!=='string'||!data.eventId.startsWith('test-')) throw new APIError(400,'Invalid test event ID.');

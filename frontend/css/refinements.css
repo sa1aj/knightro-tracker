@@ -460,10 +460,10 @@ body.keyboard-open .panel-shell { z-index: 840; }
    ========================================================================================== */
 :root {
   --grey-hi: #4a4f5c; --grey-lo: #0d0e11;
-  --grey-ramps: var(--drs-line-down) 0 0 / 8px 16px repeat-x, var(--drs-ink-up) 0 100% / 8px 16px repeat-x, var(--drs-ink-left) 100% 0 / 16px 8px repeat-y;
-  --grey-ramps-pressed: var(--drs-ink-down) 0 0 / 8px 16px repeat-x, var(--drs-line-up) 0 100% / 8px 16px repeat-x, var(--drs-line-right) 0 0 / 16px 8px repeat-y;
-  --grey-strips: var(--dt-line-75) 0 0 / 8px 4px repeat-x, var(--dt-ink-75) 0 100% / 8px 4px repeat-x;
-  --grey-strips-pressed: var(--dt-ink-75) 0 0 / 8px 4px repeat-x, var(--dt-line-75) 0 100% / 8px 4px repeat-x;
+  --grey-ramps: var(--drs-steel-down) 0 0 / 8px 16px repeat-x, var(--drs-ink-up) 0 100% / 8px 16px repeat-x, var(--drs-ink-left) 100% 0 / 16px 8px repeat-y;
+  --grey-ramps-pressed: var(--drs-ink-down) 0 0 / 8px 16px repeat-x, var(--drs-steel-up) 0 100% / 8px 16px repeat-x, var(--drs-steel-right) 0 0 / 16px 8px repeat-y;
+  --grey-strips: var(--dt-steel-50) 0 0 / 8px 4px repeat-x, var(--dt-ink-75) 0 100% / 8px 4px repeat-x;
+  --grey-strips-pressed: var(--dt-ink-75) 0 0 / 8px 4px repeat-x, var(--dt-steel-50) 0 100% / 8px 4px repeat-x;
   --grey-raise: inset 2px 2px 0 var(--grey-hi), inset -2px -2px 0 var(--grey-lo);
   --grey-sunk: inset 2px 2px 0 var(--grey-lo), inset -2px -2px 0 var(--grey-hi);
 }
@@ -484,3 +484,57 @@ body.keyboard-open .panel-shell { z-index: 840; }
 .nav-item:not([aria-current]), .switch-row { background: var(--grey-strips), var(--screen-2); box-shadow: var(--grey-raise); }
 .nav-item:not([aria-current]):hover, .nav-item:not([aria-current]):focus-visible, .switch-row:hover { background: var(--grey-strips), #262a33; }
 .nav-item:not([aria-current]):active, .switch-row:active { background: var(--grey-strips-pressed), var(--screen-2); box-shadow: var(--grey-sunk); }
+
+/* Event details popup: one static image (frame 3); no float, no cross-fade. Map event pins are unaffected. */
+.event-hero { animation: none; }
+.event-hero .event-hero-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+
+/* ==========================================================================================
+   The same lit-from-top-left texture on the remaining flat controls (shared ramps, palettes unchanged)
+   ========================================================================================== */
+:root {
+  /* cream family (tiles, map zoom): white light along the top, cream shade along the bottom and right */
+  --cream-ramps: var(--drs-paper-down) 0 0 / 8px 16px repeat-x, var(--drs-cream-up) 0 100% / 8px 16px repeat-x, var(--drs-cream-left) 100% 0 / 16px 8px repeat-y;
+  --cream-ramps-pressed: var(--drs-cream-down) 0 0 / 8px 16px repeat-x, var(--drs-paper-up) 0 100% / 8px 16px repeat-x, var(--drs-cream-right) 0 0 / 16px 8px repeat-y;
+  /* gold family, small controls */
+  --gold-strips: var(--dt-hi-50) 0 0 / 8px 4px repeat-x, var(--dt-lo-75) 0 100% / 8px 4px repeat-x;
+  --gold-strips-pressed: var(--dt-lo-75) 0 0 / 8px 4px repeat-x, var(--dt-hi-50) 0 100% / 8px 4px repeat-x;
+}
+/* cream tiles: Recent, menu, sound */
+.tile, .dock .recent-btn { background: var(--cream-ramps), var(--tile); }
+.tile:hover, .dock .recent-btn:hover { background: var(--cream-ramps), #fff; }
+.tile:active, .dock .recent-btn:active { background: var(--cream-ramps-pressed), var(--tile); }
+.tile:disabled { background: var(--tile); opacity: 0.5; cursor: default; }
+/* map zoom buttons */
+.leaflet-bar a, .leaflet-touch .leaflet-bar a { background: var(--dt-paper-75) 0 0 / 8px 4px repeat-x, var(--dt-cream-75) 0 100% / 8px 4px repeat-x, var(--tile); }
+.leaflet-bar a:hover { background: var(--dt-paper-75) 0 0 / 8px 4px repeat-x, var(--dt-cream-75) 0 100% / 8px 4px repeat-x, #fff; }
+.leaflet-bar a:active { background: var(--dt-cream-75) 0 0 / 8px 4px repeat-x, var(--dt-paper-75) 0 100% / 8px 4px repeat-x, var(--tile); }
+.leaflet-bar a.leaflet-disabled { background: var(--tile); color: #8a8578; opacity: 0.6; cursor: default; }
+/* mission chips (ink, gold text) take the grey ramps; the alert chip takes the gold strips */
+.mission-bar button { background: var(--grey-strips), var(--ink); }
+.mission-bar button:hover, .mission-bar button:focus-visible { background: var(--gold-strips), var(--gold); }
+.mission-bar button:active { background: var(--grey-strips-pressed), var(--ink); }
+.mission-bar .has-alert, .mission-bar .has-alert:active { background: var(--gold-strips), var(--gold); }
+.mission-bar button:disabled { background: var(--ink); opacity: 0.5; }
+/* retry chip */
+.retry-chip { background: var(--gold-strips), var(--gold); }
+.retry-chip:hover { background: var(--gold-strips), var(--gold-hi); }
+.retry-chip:active { background: var(--gold-strips-pressed), var(--gold); }
+.retry-chip:disabled { background: var(--gold); opacity: 0.5; }
+/* clickable cards keep their gold edge stripe and gain a lit top and shaded bottom; pressed swaps them */
+.feed-item, .event-row, .bounty-card, .admin-pick {
+  background: var(--dt-gold-50) 0 0 / 6px 8px repeat-y, var(--dt-steel-50) 0 0 / 8px 4px repeat-x, var(--dt-ink-75) 0 100% / 8px 4px repeat-x, var(--screen-2);
+}
+.feed-item:hover, .event-row:hover, .bounty-card:hover, .admin-pick:hover { background-color: #262a33; }
+.feed-item:active, .event-row:active, .bounty-card:active, .admin-pick:active {
+  background: var(--dt-gold-50) 0 0 / 6px 8px repeat-y, var(--dt-ink-75) 0 0 / 8px 4px repeat-x, var(--dt-steel-50) 0 100% / 8px 4px repeat-x, var(--screen-2);
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+.admin-pick.on, .admin-pick[aria-pressed="true"] { background-color: #2a2614; }
+/* switch rows: disabled while saving */
+.switch-row:disabled { background: var(--screen-2); box-shadow: none; opacity: 0.55; cursor: progress; }
+
+/* ---------- admin test events: visibility tag ---------- */
+.vis-tag { display: inline-block; padding: 1px 5px; font: 9px var(--f-display); letter-spacing: 0.08em; color: var(--dim); box-shadow: inset 0 0 0 2px var(--line); }
+.vis-tag.on { color: var(--ink); background: var(--ok); box-shadow: none; }
+.dock .recent-btn.active, .dock .recent-btn.active:hover { background: var(--gold-strips), var(--gold-hi); } /* selected (list open) */

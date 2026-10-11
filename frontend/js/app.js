@@ -154,7 +154,12 @@
     .filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && mapUtils.contains(campus, {lat:s.lat, lng:s.long}))
     .sort((a, b) => b.timestamp - a.timestamp);
   // Not yet ended (ongoing events stay); a listing without an end time counts as an instant at its start.
-  const activeEvents = () => [...state.events, ...(adminOn() ? state.testEvents : [])].filter((e) => mapUtils.eventEnd(e) > nowSec());
+  // A test event an admin made visible arrives in the public feed too; in Admin Mode the admin list's copy wins (one pin, not two).
+  const activeEvents = () => {
+    const tests = adminOn() ? state.testEvents : [];
+    const ids = new Set(tests.map((e) => e.eventId));
+    return [...state.events.filter((e) => !ids.has(e.eventId)), ...tests].filter((e) => mapUtils.eventEnd(e) > nowSec());
+  };
   const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
   // This calendar week (Mon–Sun, America/New_York). Map pins and the event list both use it.
@@ -450,6 +455,8 @@
 
   function openPanel(name, backTo = null) {
     setMenu(false);
+    // The admin panel opens only for accounts the server lists as admins, with Admin Mode on (the server also checks every call).
+    if (name === 'admin' && !adminOn()) return;
     if (CONFIG.ACCOUNTS && ['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
     if (name === 'report' && state.panel !== 'report' && state.nextSightingAt > nowSec()) {
       fx.toast('TAKE A BREATHER', 'Your next report unlocks in ' + Math.ceil(state.nextSightingAt - nowSec()) + ' seconds.', 'info');
@@ -954,7 +961,7 @@
       h('strong',{},event.title),
       h('span',{class:'small'},...numText(eventTime(event.startsAt) + ' ET')),
       h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · Location not mapped')),
-      probabilityTag(event),
+      event.isTest ? h('span',{class:'prob-tag unknown'},'TEST EVENT · no points') : probabilityTag(event),
       h('span',{class:'small hint-reason'},event.reason || 'Possible appearance'));
   }
   /** Estimated-likelihood chip. Always worded as an estimate, never as a confirmed appearance. */
@@ -994,11 +1001,12 @@
     let safeUrl = null;
     try { const url = new URL(event.url); if (url.protocol === 'https:') safeUrl = url.href; } catch { /* no external link */ }
     return [
-      event.isTest && h('p',{class:'msg warn'},'TEST EVENT · only visible to admins in Admin Mode'),
-      h('div',{class:'event-hero'},CONFIG.EVENT_FRAMES.map((src,i) => h('img',{src,alt:'',class:'event-frame frame-' + i}))),
+      event.isTest && h('p',{class:'msg warn'},event.visible ? 'TEST EVENT · visible to everyone for testing · not a real event · no points' : 'TEST EVENT · only visible to admins in Admin Mode'),
+      // Static artwork in the details popup: the selected-state (third) frame. Map pins keep their own 3-frame animation.
+      h('div',{class:'event-hero'},h('img',{src:CONFIG.EVENT_FRAMES[2],alt:'',class:'event-hero-art'})),
       h('h3',{},event.title), h('p',{},event.location || 'Location to be announced'),
       h('p',{class:'msg'},(event.reason || 'Possible appearance') + '. Knightro attendance is unconfirmed.'),
-      h('p',{},probabilityTag(event)),
+      !event.isTest && h('p',{},probabilityTag(event)), // a test event's fixed odds are not an estimate
       h('dl',{class:'kv'},h('dt',{},'START'),h('dd',{},...numText(eventTime(event.startsAt) + ' ET')),h('dt',{},'END'),h('dd',{},...numText(eventTime(event.endsAt) + ' ET'))),
       Array.isArray(event.hosts) && h('p',{class:'muted'},'Hosted by ' + event.hosts.join(', ')),
       safeUrl && h('a',{class:'px-btn',href:safeUrl,target:'_blank',rel:'noopener noreferrer'},'VIEW ON KNIGHTCONNECT'),
@@ -1293,7 +1301,7 @@
     sfx.play('whoosh');
     fx.replay(recenterButton, 'spin');
   }
-  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession,
+  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents,
     buildings: () => buildings, campus: () => campus });
   $('#admin-mode-toggle').addEventListener('click', () => admin.setMode(!adminOn()));
   const soundBtn = $('#btn-sound');

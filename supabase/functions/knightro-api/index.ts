@@ -4,7 +4,7 @@ import {cleanPhoto} from '../_shared/photos.ts';
 import {checkPhoto} from '../_shared/photo-check.ts';
 
 const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/test-events','admin/test-sightings','admin/sightings','admin/log']);
-const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/sightings/approve','admin/test-data/clear']);
+const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear']);
 
 function validateSubscription(value:any) {
   try {
@@ -98,21 +98,22 @@ Deno.serve(async req=> {
       }
       // Failed commits leave a reserved object for scheduled cleanup; never delete a possibly committed photo.
       // Classification runs outside the database transaction. Browser-supplied
-      // classification fields are never forwarded. Outages safely queue review.
+      // classification fields are never forwarded. Only a detected match can post.
       const photoCheck=await checkPhoto(checkedPhoto,settings);
+      if(photoCheck.status==='unavailable') throw new APIError(503,'The photo checker is temporarily unavailable. Your sighting was not posted. Please retry.');
+      if(photoCheck.status!=='detected') throw new APIError(422,'Knightro was not detected in this photo. Retake it with Knightro clearly in frame.');
       return json(await rpc('POST sightings',user.id,{...payload,photoCheck}),201);
     }
     if(['presence','admin/test-sightings','admin/test-events'].includes(route)) location(data);
     if(route==='push/subscribe') data.subscription=validateSubscription(data.subscription);
     if(route==='push/unsubscribe') text(data,'endpoint',1,2048);
     if(['admin/mode','admin/cooldown'].includes(route)&&typeof data.enabled!=='boolean') throw new APIError(400,'Choose on or off.');
-    if(['admin/points','admin/test-events/delete','admin/sightings/remove','admin/sightings/approve','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
+    if(['admin/points','admin/test-events/delete','admin/sightings/remove','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
     if(route==='admin/points') {
       uuid(data.userId);text(data,'reason',3,140);
       if(!Number.isInteger(data.amount)||data.amount===0||Math.abs(data.amount)>1000||!/^[A-Za-z0-9-]{8,64}$/.test(data.requestId||'')) throw new APIError(400,'Invalid point adjustment.');
     }
     if(route==='admin/sightings/remove') {uuid(data.sightingId);text(data,'reason',3,140);}
-    if(route==='admin/sightings/approve') uuid(data.sightingId);
     if(route==='admin/test-sightings') text(data,'caption',0,200,true);
     if(route==='admin/test-events') {
       data.title=text(data,'title',3,80);data.description=text(data,'description',0,400,true);

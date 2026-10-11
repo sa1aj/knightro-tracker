@@ -528,7 +528,7 @@
       fx.burst(btn.left + btn.width / 2, btn.top, 120);
       render(); // show SEE SIGHTING now; the background refresh below must not delay it
       refresh({ quiet: true });
-      fx.toast('SIGHTING POSTED!', (res.points == null ? '' : '+' + pts(res.points) + '. ') + (isPublic(saved) ? 'Your pin is live in Recent Sightings.' : 'It is waiting for review.'), 'good');
+      fx.toast('SIGHTING POSTED!', (res.points == null ? '' : '+' + pts(res.points) + '. ') + (isPublic(saved) ? 'Your pin is live in Recent Sightings.' : 'Your photo report was saved.'), 'good');
     } catch (err) {
       if (state.report !== r) return;
       r.error = err.message;
@@ -635,7 +635,7 @@
       h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(saved.lat, saved.long))),
       live
         ? h('div', { class: 'msg', role: 'status' }, ...numText((saved.points == null ? 'Saved to the shared sightings map. ' : '+' + pts(saved.points) + ' awarded. ') + 'Your pin is live on the map and in Recent Sightings.'))
-        : h('div', { class: 'msg warn', role: 'status' }, 'Pending review: only you can see this pin until it is approved. Points are awarded after confirmation.'),
+        : h('div', { class: 'msg warn', role: 'status' }, 'This report is not public. Take a new photo with Knightro clearly in frame.'),
       h('div', { class: 'panel-foot' },
         h('button', { type: 'button', class: 'px-btn alt', onclick: closePanel }, 'CLOSE'),
         h('button', { type: 'button', class: 'px-btn', onclick: () => showSighting(saved.sightingId) }, 'SEE SIGHTING')
@@ -719,13 +719,13 @@
     return [
       s.isTest && h('p', { class: 'msg warn' }, 'TEST SIGHTING · only visible to admins in Admin Mode · 0 points'),
       // Moderation status exactly as the server reported it; a pending report is never shown as public.
-      s.status === 'pending' && h('p', { class: 'msg warn' }, 'PENDING REVIEW · Only you can see this pin until it is approved. Points are awarded after confirmation.'),
-      s.status === 'rejected' && h('p', { class: 'msg err' }, 'REMOVED · This report was not approved and is not public.'),
+      s.status === 'pending' && h('p', { class: 'msg warn' }, 'NOT POSTED · Take a new photo with Knightro clearly in frame.'),
+      s.status === 'rejected' && h('p', { class: 'msg err' }, 'NOT PUBLIC · This report was removed or Knightro was not detected.'),
       h('div', { class: 'label' }, mine ? 'Your sighting' : s.sightingId === campusSightings()[0]?.sightingId ? 'Latest sighting' : 'Sighting'),
       h('figure', { class: 'photo-fig' },
         h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: s.photoUrl ? 'Reported Knightro sighting photo' : 'Illustration of Knightro' }),
         h('figcaption', { class: 'label' }, ...numText(s.photoUrl
-          ? (s.status === 'confirmed' ? 'Photo confirmed' : s.status === 'pending' ? 'Photo report · pending review' : 'Community photo report') + (s.points == null ? '' : ' · ' + pts(s.points))
+          ? (s.status === 'confirmed' ? 'Photo confirmed' : s.status === 'pending' ? 'Photo report · not posted' : 'Community photo report') + (s.points == null ? '' : ' · ' + pts(s.points))
           : s.isTest ? 'Test sighting · illustration' : s.source === 'aws' ? 'Shared map sighting · no photo' : 'Legacy sighting · illustration'))
       ),
       h('div', { class: `fresh-note ${fresh ? 'live' : 'old'}` },
@@ -777,7 +777,7 @@
       h('p', {}, state.user.email),
       h('p', {class:'stat'}, h('span', {class:'label'}, 'Total points'), h('strong', {class:'num stat-value'}, fmt(state.user.score))),
       state.admin?.allowed && h('p', {class:'msg warn'}, 'This account is authorized for Admin Mode. Use the ADMIN section of the menu.'),
-      h('p', {class:'msg'}, (state.authMode === 'password' ? 'Your UCF email address has not been verified. ' : 'UCF email verified. ') + 'Approved photo reports earn points; your first approved report in today’s bounty section earns double. Some photos need admin review. Your email stays private.'),
+      h('p', {class:'msg'}, (state.authMode === 'password' ? 'Your UCF email address has not been verified. ' : 'UCF email verified. ') + 'Photos where the checker detects Knightro post automatically and earn points; your first matching report in today’s bounty section earns double. Your email stays private.'),
       h('p', {id:'cooldown-note',class:'small'}),
       h('p', {class:'muted small'}, 'An essential sign-in cookie keeps this browser signed in for 14 days. Signing out removes it. No advertising cookies are used.'),
       h('button', {type:'button',class:'px-btn alt',onclick:async (event) => {
@@ -1081,7 +1081,7 @@
     if (!CONFIG.ACCOUNTS) return [unavailableBox('Photo reports')];
     return [h('p',{class:'small'},'Your photo reports and awarded points. Pending reports stay private and earn points after approval; removed reports earn no points.'),
       state.reportsError && errorBox(state.reportsError, loadReports),
-      ...state.reports.map(r => h('article',{class:'report-card'},h('strong',{},r.placeLabel),h('span',{class:'report-status '+r.status},r.status.toUpperCase()),h('span',{class:'small'},...numText(r.status === 'pending' ? pts(r.eligiblePoints) + ' eligible after confirmation' : r.status === 'rejected' ? 'Not approved · 0 pts' : pts(r.points) + ' awarded')))),
+      ...state.reports.map(r => h('article',{class:'report-card'},h('strong',{},r.placeLabel),h('span',{class:'report-status '+r.status},r.status.toUpperCase()),h('span',{class:'small'},...numText(r.status === 'pending' ? 'Not posted · 0 pts' : r.status === 'rejected' ? 'Not public · 0 pts' : pts(r.points) + ' awarded')))),
       !state.reports.length && h('p',{class:'msg'},state.reportsLoaded ? 'No photo reports yet. Spot Knightro and take a photo.' : 'Loading your reports…'),
       h('button',{type:'button',class:'px-btn alt',onclick:loadReports},'REFRESH REVIEW STATUS')];
   }

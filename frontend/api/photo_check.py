@@ -58,7 +58,7 @@ def classify(raw):
     score = float(scores[1] / scores.sum())
     if not np.isfinite(score):
         raise RuntimeError("Invalid model output")
-    return {"status": "detected" if score >= THRESHOLD else "review", "score": score,
+    return {"status": "detected" if score >= THRESHOLD else "not-detected", "score": score,
             "threshold": THRESHOLD, "modelRevision": MODEL_REVISION, "modelHash": MODEL_HASH}
 
 
@@ -87,7 +87,7 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.authorized():
             self.reply(200, {"configured": bool(os.environ.get("KNIGHTRO_HF_TOKEN")),
-                             "modelRevision": MODEL_REVISION, "mode": "review"})
+                             "modelRevision": MODEL_REVISION, "mode": "automatic"})
 
     def do_POST(self):
         if not self.authorized():
@@ -104,5 +104,5 @@ class handler(BaseHTTPRequestHandler):
         except ValueError:
             self.reply(400, {"error": "Unreadable normalized photo"})
         except Exception:
-            # Supabase places this report in its private review queue on failure.
+            # Supabase asks the user to retry; an outage never publishes a report.
             self.reply(503, {"error": "Photo checker unavailable"})

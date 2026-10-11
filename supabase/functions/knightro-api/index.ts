@@ -1,4 +1,4 @@
-import {APIError,boundedBody,config,fail,hash,json,limit,location,randomToken,requireSecret,rpc,supabase,text,ucfEmail,uuid} from '../_shared/backend.ts';
+import {APIError,allowedFrontendOrigin,boundedBody,config,fail,hash,json,limit,location,randomToken,requireSecret,rpc,supabase,text,ucfEmail,uuid} from '../_shared/backend.ts';
 import {authRequest,cookie,cookieToken,createSession,identity} from '../_shared/auth.ts';
 import {cleanPhoto} from '../_shared/photos.ts';
 
@@ -28,7 +28,7 @@ Deno.serve(async req=> {
     const settings=await config(),url=new URL(req.url);
     const route=url.pathname.replace(/^.*\/knightro-api\/?/,'').replace(/^api\//,'');
     if(!['GET','POST'].includes(req.method)) throw new APIError(405,'Method not allowed.');
-    if(req.method==='POST' && req.headers.get('origin')!==settings.PUBLIC_ORIGIN) throw new APIError(403,'Unrecognized request origin.');
+    if(req.method==='POST' && !allowedFrontendOrigin(req.headers.get('origin'),settings)) throw new APIError(403,'Unrecognized request origin.');
     if(req.method==='GET' && !reads.has(route) && !/^photos\/[a-f0-9-]{36}$/i.test(route)) throw new APIError(404,'API route not found.');
     if(req.method==='POST' && !writes.has(route)) throw new APIError(404,'API route not found.');
     const data=req.method==='POST'?await boundedBody(req,route==='sightings'?3000000:16384):{};

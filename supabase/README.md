@@ -15,7 +15,7 @@ Use `frontend` as the Vercel project root. Set these **private server environmen
 
 Retrieve the proxy token in the Supabase dashboard's Vault page. Do not generate a different token, put it in browser JavaScript, or use a `NEXT_PUBLIC_` / `VITE_` prefix. Supabase service keys are not needed in Vercel. Only the Vercel server calls the Edge API; browsers use the same-origin `/api/*` proxy.
 
-The allowed production origin is stored in Vault as `knightro_PUBLIC_ORIGIN`, currently `https://knightro-tracker-potatogigabyte.vercel.app`. Use that canonical URL for accounts and reports. Alternate deployment aliases and preview URLs do not accept account or report writes until an operator explicitly configures the intended origin. Redeploy after changing Vercel environment variables.
+The canonical production origin is stored in Vault as `knightro_PUBLIC_ORIGIN`, currently `https://knightro-tracker-potatogigabyte.vercel.app`. The JSON array in `knightro_PUBLIC_ORIGINS` also approves `https://knightro-tracker-frontend-teal.vercel.app`. Both sites can use the same backend, accounts, photos, and event feed once their private Vercel settings are configured. Other aliases and preview URLs do not accept account or report writes until an operator explicitly configures the intended origin. Redeploy after changing Vercel environment variables. See [the teal site connection guide](../docs/connect-teal-vercel.md) for its owner's setup steps.
 
 ## Accounts and cookies
 

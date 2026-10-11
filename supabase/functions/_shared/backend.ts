@@ -16,6 +16,18 @@ export async function config():Promise<Data> {
   return configuration!;
 }
 export function clearConfig() { configuration=null; }
+export function allowedFrontendOrigin(origin:string|null,settings:Data):boolean {
+  const origins=[settings.PUBLIC_ORIGIN];
+  if (settings.PUBLIC_ORIGINS) {
+    try {
+      const additional=JSON.parse(settings.PUBLIC_ORIGINS);
+      if (!Array.isArray(additional) || additional.length>10 || !additional.every(value=>
+        typeof value==='string' && new URL(value).protocol==='https:' && new URL(value).origin===value)) throw new Error();
+      origins.push(...additional);
+    } catch { throw new APIError(503,'The website origin configuration is invalid.'); }
+  }
+  return origin!==null && origins.includes(origin);
+}
 export function json(value: unknown, status = 200, cookie?: string): Response {
   const headers = new Headers({'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   if (cookie) headers.set('Set-Cookie',cookie);

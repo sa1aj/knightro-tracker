@@ -63,11 +63,12 @@
       return { ...feed, events, filter: 'likely-knightro' };
     },
     /**
-     * The calendar week (Monday 00:00 → next Monday 00:00) containing `now`, in UCF's time zone, as Unix seconds.
-     * Midnights are resolved in that zone, so weeks crossing a daylight-saving change are 167 or 169 hours long.
+     * Rolling window from the start of today to the start of the day `days` calendar days later, in UCF's time zone,
+     * as Unix seconds (e.g. Thursday 00:00 → next Thursday 00:00). Midnights are resolved in that zone, so a window
+     * crossing a daylight-saving change is 167 or 169 hours long.
      */
-    weekRange(now, timeZone = 'America/New_York') {
-      const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' });
+    dayWindow(now, days = 7, timeZone = 'America/New_York') {
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' });
       const parts = (t) => Object.fromEntries(fmt.formatToParts(new Date(t * 1000)).map((p) => [p.type, p.value]));
       // Unix time of local midnight on (y, m, d); Date.UTC rolls day overflow into the next month/year.
       const midnight = (y, m, d) => {
@@ -80,12 +81,13 @@
         return t;
       };
       const p = parts(now);
-      const sinceMonday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(p.weekday);
-      return { start: midnight(+p.year, +p.month, +p.day - sinceMonday), end: midnight(+p.year, +p.month, +p.day - sinceMonday + 7) };
+      return { start: midnight(+p.year, +p.month, +p.day), end: midnight(+p.year, +p.month, +p.day + days) };
     },
+    /** An event's end; a listing without an end time is treated as an instant at its start. */
+    eventEnd: (event) => (Number.isFinite(event.endsAt) ? Math.max(event.endsAt, event.startsAt) : event.startsAt),
     /** True when an event's scheduled time overlaps the range (multi-day events included; zero-length = an instant). */
     overlaps(event, range) {
-      return event.startsAt < range.end && Math.max(event.endsAt, event.startsAt + 1) > range.start;
+      return event.startsAt < range.end && Math.max(util.eventEnd(event), event.startsAt + 1) > range.start;
     },
     cluster(items, project, radius = 48) {
       const groups = [];

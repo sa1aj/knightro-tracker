@@ -1,0 +1,289 @@
+/* ==========================================================================================
+   Readable numbers, supplied icon art, the Knightro map pin, camera flip, and the phone layouts.
+   Loaded last. Desktop layout is unchanged except for icons and number styling.
+   ========================================================================================== */
+:root {
+  /* Digits only. The pixel fonts make 5/8/S and 6/b look alike; Space Mono keeps the retro feel with clear,
+     equal-width digits so columns and timers line up. */
+  --f-num: 'Space Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* ------------------------------------------------------------------ numbers */
+.num {
+  font-family: var(--f-num); font-weight: 700; font-style: normal;
+  font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0; text-shadow: none;
+}
+/* Small pixel-font contexts: give digits a touch more size so they hold up on phones. */
+.mission-bar .num { font-size: 1.3em; line-height: 1; }
+.status .num, .fresh-note .num, .label .num, .ticker .num, .px-btn .num, .report-btn .num { font-size: 1.15em; line-height: 1; }
+input[type="number"], #account-code { font-family: var(--f-num); font-weight: 700; }
+.badge, .stack-count {
+  font: 700 12px/1 var(--f-num); letter-spacing: 0; padding: 4px 5px 3px; min-width: 24px; text-shadow: none;
+}
+.kt-pin .age, .asset-pin .age { font: 700 10px/1.25 var(--f-num); letter-spacing: 0; padding: 1px 4px; }
+.bounty-clock { font: 700 15px var(--f-num); letter-spacing: 0; }
+.stat {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 12px;
+  background: var(--ink); box-shadow: inset 0 0 0 2px var(--line);
+}
+.stat-value { font-size: 26px; line-height: 1; color: var(--gold); }
+
+/* Leaderboard: rank badge grows for 2-3 digit ranks; names truncate; points stay right-aligned in one column. */
+.leaderboard li { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; }
+.leaderboard .rank {
+  min-width: 30px; width: auto; height: 30px; padding: 0 6px;
+  font: 700 15px/1 var(--f-num); letter-spacing: 0;
+}
+.lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leaderboard li .lb-score { white-space: nowrap; text-align: right; color: var(--gold); font-size: 17px; line-height: 1; }
+.lb-score small { font: 10px var(--f-display); letter-spacing: 0.06em; color: var(--dim); }
+.leaderboard li.top .lb-score { color: var(--gold-hi); }
+
+/* ------------------------------------------------------------------ bottom dock + ticker */
+/* REPORT and RECENT share one height, outline, and drop, so they sit on the same baseline and press the same way.
+   The ticker always reserves two lines, and the dock sits a clear gap above it plus the buttons' drop shadow,
+   so a long message never grows into the buttons. */
+:root {
+  --dock-h: 60px; --dock-ring: 3px; --dock-drop: 7px; /* the RECENT tile's original stroke */
+  --ticker-h: 58px;
+  --dock-bottom: calc(var(--frame) + 6px + var(--ticker-h) + var(--dock-drop) + 12px);
+}
+.ticker { height: var(--ticker-h); min-height: 0; }
+/* REPORT + RECENT are centred together as one group (landscape phones re-enable the grid below). */
+.dock { display: flex; justify-content: center; align-items: end; gap: 18px; }
+.dock > span:first-child { display: none; }
+.dock .report-btn, .dock .recent-btn {
+  height: var(--dock-h); margin: 0; align-self: end;
+  box-shadow: 0 calc(-1 * var(--dock-ring)) 0 var(--ink), 0 var(--dock-ring) 0 var(--ink), calc(-1 * var(--dock-ring)) 0 0 var(--ink), var(--dock-ring) 0 0 var(--ink),
+    inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo), 0 var(--dock-drop) 0 var(--bevel-lo);
+}
+.dock .report-btn:hover, .dock .recent-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 calc(-1 * var(--dock-ring)) 0 var(--ink), 0 var(--dock-ring) 0 var(--ink), calc(-1 * var(--dock-ring)) 0 0 var(--ink), var(--dock-ring) 0 0 var(--ink),
+    inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo), 0 calc(var(--dock-drop) + 2px) 0 var(--bevel-lo);
+}
+.dock .report-btn:active, .dock .recent-btn:active {
+  transform: translateY(calc(var(--dock-drop) - 4px));
+  box-shadow: 0 calc(-1 * var(--dock-ring)) 0 var(--ink), 0 var(--dock-ring) 0 var(--ink), calc(-1 * var(--dock-ring)) 0 0 var(--ink), var(--dock-ring) 0 0 var(--ink),
+    inset 3px 3px 0 var(--bevel-lo), inset -3px -3px 0 var(--bevel-hi), 0 4px 0 var(--bevel-lo);
+}
+
+/* ------------------------------------------------------------------ supplied icon art */
+.icon-art { display: block; object-fit: contain; image-rendering: auto; pointer-events: none; flex: none; }
+/* The art files are framed on their visible artwork (tight viewBox), so plain centring is optical centring. */
+/* Winking Knightro in the menu's KNIGHTRO HQ badge (the toggle keeps its three bars). */
+.nav-badge { width: 44px; height: 44px; background: var(--tile); box-shadow: inset 2px 2px 0 #fff, inset -2px -2px 0 var(--tile-sh), 0 0 0 2px var(--ink); }
+.nav-badge #nav-helm { width: 36px; height: 36px; image-rendering: auto; }
+.recent-btn .icon-art { width: 32px; height: 32px; }
+.report-btn .icon-art { width: 34px; height: 34px; }
+/* The pin art is taller than wide: keep its proportions at whatever height a layout gives the icon. */
+.report-btn .icon-art.pin-art-icon { width: auto; aspect-ratio: 223 / 286.1; }
+.nav-ico { width: 38px; height: 38px; }
+.nav-item { grid-template-columns: 38px minmax(0, 1fr) auto; }
+.nav-ico.art { background: var(--tile); box-shadow: inset 2px 2px 0 #fff, inset -2px -2px 0 var(--tile-sh), 0 0 0 2px var(--ink); }
+.nav-ico.art img { width: 30px; height: 30px; object-fit: contain; image-rendering: auto; }
+.nav-ico.art img.wide-art { transform: scale(1.12); } /* flat podium art: same perceived size as the others */
+.nav-item:hover .nav-ico.art img { transform: translateY(-1px) scale(1.06); }
+.nav-item:hover .nav-ico.art img.wide-art { transform: translateY(-1px) scale(1.18); }
+.nav-ico.art img { transition: transform 180ms var(--ease-ui); }
+
+/* ------------------------------------------------------------------ Knightro map pin */
+/* Leaflet positions .kt-pin; only inner wrappers animate, so the tip stays on its coordinate. */
+.leaflet-container .asset-pin .pin-art img { width: 100%; height: 100%; }
+.sighting-pin .kt-pin-body { filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.55)); transform-origin: 50% 100%; }
+.sighting-pin .pin-art { transform-origin: 50% 100%; }
+.asset-pin.sel .pin-art img { filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)); }
+.pending-pin .pin-art img { filter: saturate(0.35) brightness(0.9); }
+.pending-pin .age { background: var(--warn); color: var(--ink); }
+.asset-pin.spotlight .kt-pin-body::after {
+  content: ''; position: absolute; left: 50%; bottom: -5px; width: 18px; height: 9px; margin-left: -9px;
+  border: 3px solid var(--gold); border-radius: 50%; pointer-events: none;
+  animation: spotRing 0.9s ease-out 3;
+}
+@keyframes spotRing { from { transform: scale(0.6); opacity: 1; } to { transform: scale(4); opacity: 0; } }
+.kt-drop .drop-art { display: block; width: 100%; height: 100%; }
+.leaflet-container .kt-drop img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+
+/* ------------------------------------------------------------------ camera flip */
+.camera-viewport.mirror video { transform: scaleX(-1); } /* live selfie preview only; captured photos are never mirrored */
+.camera-flip {
+  position: absolute; right: 8px; bottom: 8px; z-index: 1; min-width: 64px; min-height: 40px; padding: 7px 10px 5px;
+  border: 0; cursor: pointer; background: rgba(12, 12, 14, 0.82); color: var(--gold);
+  font: 11px var(--f-display); letter-spacing: 0.06em; box-shadow: 0 0 0 2px var(--gold);
+  transition: transform 140ms var(--ease-ui), background 120ms ease;
+}
+.camera-flip:hover:not(:disabled) { background: var(--gold); color: var(--ink); }
+.camera-flip:active:not(:disabled) { transform: translateY(2px); }
+.camera-flip:disabled { opacity: 0.45; cursor: progress; }
+
+/* ==========================================================================================
+   Phones, portrait. Three compact rows on top, map in the middle, report + recent + ticker at the bottom.
+   Panels are bottom sheets that never exceed the visible height; only one sheet or the menu shows at a time.
+   ========================================================================================== */
+@media (max-width: 720px) {
+  :root {
+    --frame: 10px;
+    --row1: calc(var(--frame) + var(--safe-t) + 2px);        /* menu · title · sound */
+    --row2: calc(var(--row1) + 48px);                         /* live status */
+    --row3: calc(var(--row2) + 26px);                         /* mission chips */
+    --chrome-bottom: calc(var(--row3) + 36px);
+    --ticker-h: 40px;
+    --dock-h: 50px; --dock-ring: 3px; --dock-drop: 7px;
+    --dock-bottom: calc(var(--frame) + var(--safe-b) + 2px + var(--ticker-h) + var(--dock-drop) + 10px);
+  }
+  .frame-corner { width: 18px; height: 18px; }
+  .corner { top: var(--row1); width: 44px; height: 44px; }
+  .corner.l { left: calc(var(--frame) + 4px); }
+  .corner.r { right: calc(var(--frame) + 4px); }
+  .corner img { width: 24px; }
+  .plaque { top: calc(var(--safe-t) + 4px); max-width: calc(100vw - 2 * (var(--frame) + 54px)); }
+  .status { top: var(--row2); padding: 3px 9px 2px; font-size: 10px; }
+  .mission-bar { top: var(--row3); width: calc(100vw - 2 * var(--frame) - 12px); gap: 8px; }
+  .mission-bar button { flex: 1 1 0; min-width: 0; height: 30px; margin-bottom: 4px; padding: 6px 6px 4px; font-size: 9px; }
+
+  /* Map controls: one vertical group on the right, just above the dock (thumb reach), clear of the title rows. */
+  .leaflet-bottom.leaflet-left {
+    top: auto; left: auto; right: calc(var(--frame) + 4px);
+    bottom: calc(var(--dock-bottom) + 66px);
+  }
+  .leaflet-control-zoom { display: block; }
+  .leaflet-bar a, .leaflet-bar a:hover, .leaflet-touch .leaflet-bar a { width: 40px; height: 40px; line-height: 38px; }
+  .leaflet-bar a, .leaflet-bar a:hover { border-right: 0 !important; border-bottom: 2px solid var(--ink) !important; }
+  .leaflet-bar a:last-child { border-bottom: 0 !important; }
+  .leaflet-bottom.leaflet-right { top: auto; right: auto; left: calc(var(--frame) + 2px); bottom: calc(var(--dock-bottom) + 58px); }
+  .leaflet-control-attribution { font-size: 9px; line-height: 1.3; padding: 0 4px; }
+
+  /* Dock: report fills the row, recent beside it. One line of text, never wraps. */
+  .dock { display: flex; align-items: end; gap: 10px; padding: 0 calc(var(--frame) + 6px); bottom: var(--dock-bottom); }
+  .dock > span:first-child { display: none; }
+  .report-btn {
+    flex: 1 1 auto; width: auto; min-width: 0; padding: 0 12px; gap: 8px;
+    font-size: clamp(12px, 3.7vw, 15px); white-space: nowrap;
+  }
+  .report-btn > span { overflow: hidden; text-overflow: ellipsis; }
+  .report-btn .icon-art { width: 28px; height: 28px; }
+  .recent-btn { flex: none; width: 58px; padding-top: 3px; }
+  .recent-btn .icon-art { width: 28px; height: 28px; }
+  .recent-btn span { font-size: 9px; }
+  .ticker {
+    bottom: calc(var(--frame) + var(--safe-b) + 2px); width: calc(100vw - 2 * var(--frame) - 8px);
+    padding: 5px 10px 3px; font-size: 10px; border-width: 2px;
+  }
+
+  /* Bottom sheet: from the bottom frame up to at most the top rows; content scrolls inside. */
+  .panel-shell {
+    left: calc(var(--frame) - 4px); right: calc(var(--frame) - 4px); width: auto; top: auto;
+    bottom: calc(var(--frame) + var(--safe-b));
+    height: min(62dvh, calc(var(--vvh, 100dvh) - var(--chrome-bottom) - var(--frame) - var(--safe-b)));
+    min-height: 0;
+  }
+  .panel-head { padding: 7px 8px 6px 12px; }
+  .panel-head h2 { font-size: 13px; }
+  .panel-head .x { min-width: 44px; min-height: 40px; font-size: 14px; }
+  #panel-close { background: var(--gold); color: var(--ink); box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -2px -2px 0 var(--bevel-lo); }
+  .panel-body { padding: 12px 12px calc(14px + var(--safe-b)); gap: 10px; }
+  .camera-viewport { max-height: min(240px, 34dvh); }
+
+  /* Menu: one panel at a time. While it is open, any sheet steps aside (kept, so a report in progress survives). */
+  .navigation {
+    top: calc(var(--row1) + 52px); left: calc(var(--frame) + 4px);
+    width: min(320px, calc(100vw - 2 * var(--frame) - 8px));
+    max-height: calc(var(--vvh, 100dvh) - var(--row1) - 52px - var(--frame) - var(--safe-b));
+  }
+  .nav-item { min-height: 50px; }
+  body.menu-open .panel-shell.open { transform: translateY(calc(100% + 60px)); visibility: hidden; transition: transform 0.2s ease-in, visibility 0s linear 0.2s; }
+
+  .toasts { top: var(--chrome-bottom); left: 50%; right: auto; transform: translateX(-50%); width: min(340px, calc(100vw - 24px)); }
+}
+
+/* Short portrait screens (e.g. 320×568 or a keyboard on Android, where the layout itself shrinks): the sheet may rise
+   over the top rows instead of becoming a sliver. */
+@media (max-width: 389px) {
+  #mission-sense .m-long { display: none; } /* the gold chip already signals a new hint */
+}
+@media (max-width: 374px) {
+  .mission-bar .m-long { display: none; } /* keep the numbers, drop the filler words */
+  .mission-bar button { font-size: 8.5px; padding-inline: 4px; }
+}
+@media (max-width: 720px) and (max-height: 600px) {
+  .panel-shell { height: auto; top: calc(var(--row1) + 50px); }
+}
+/* iOS keyboard (the layout does not shrink): sit the sheet on top of the keyboard and use all visible height. */
+@media (max-width: 720px) {
+  body.keyboard-open .panel-shell { top: calc(var(--safe-t) + 6px); height: auto; bottom: calc(var(--kb) + 4px); }
+}
+
+/* ==========================================================================================
+   Phones, landscape (short screens). Status and missions share one row; panels become a right-hand column.
+   ========================================================================================== */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --frame: 8px;
+    --row1: calc(var(--frame) + 2px);
+    --row2: calc(var(--row1) + 46px);
+    --chrome-bottom: calc(var(--row2) + 34px);
+    --dock-h: 44px; --dock-ring: 3px; --dock-drop: 6px;
+    --dock-bottom: calc(var(--frame) + var(--safe-b) + var(--dock-drop) + 4px);
+  }
+  .frame-corner { width: 16px; height: 16px; }
+  .corner { top: var(--row1); width: 42px; height: 42px; }
+  .corner.l { left: calc(var(--frame) + 4px + env(safe-area-inset-left, 0px)); }
+  .corner.r { right: calc(var(--frame) + 4px + env(safe-area-inset-right, 0px)); }
+  .plaque { top: 3px; padding: 3px 10px 3px; }
+  .plaque h1 { font-size: 13px; gap: 6px; }
+  .knightro-window { width: 32px; height: 32px; margin-block: -5px; }
+  .knightro-anim { width: 25px; }
+  .status { top: var(--row2); left: calc(var(--frame) + 56px + env(safe-area-inset-left, 0px)); transform: none; font-size: 10px; padding: 4px 9px 3px; animation: none; }
+  .mission-bar { top: var(--row2); left: auto; right: calc(var(--frame) + 56px + env(safe-area-inset-right, 0px)); transform: none; gap: 8px; width: auto; max-width: calc(100vw - 2 * var(--frame) - 260px); }
+  .mission-bar button { flex: 0 1 auto; height: 28px; padding: 6px 8px 4px; font-size: 9px; margin-bottom: 0; }
+
+  /* Bottom band: ticker on the left, report in the middle, recent on its right. */
+  /* Bottom band: ticker on the left; REPORT + RECENT centred together as one group. */
+  :root { --report-w: clamp(200px, 34vw, 300px); }
+  .dock { display: flex; justify-content: center; bottom: var(--dock-bottom); gap: 10px; padding: 0; }
+  .dock > span:first-child { display: none; }
+  .report-btn { flex: none; min-width: 0; width: var(--report-w); font-size: 13px; padding: 0 12px; gap: 8px; white-space: nowrap; }
+  .report-btn .icon-art { width: 26px; height: 26px; }
+  .recent-btn { width: 56px; }
+  .recent-btn .icon-art { width: 24px; height: 24px; }
+  .recent-btn span { font-size: 8px; }
+  .ticker {
+    left: calc(var(--frame) + 4px + env(safe-area-inset-left, 0px)); transform: none; animation: none;
+    bottom: var(--dock-bottom); height: var(--dock-h); width: calc(50vw - (var(--report-w) + 66px) / 2 - var(--frame) - 18px - env(safe-area-inset-left, 0px));
+    padding: 4px 8px 3px; font-size: 9px; border-width: 2px;
+  }
+  .ticker.glitch { animation: none; }
+  .leaflet-bottom.leaflet-left { top: calc(var(--chrome-bottom) + 6px); bottom: auto; left: auto; right: calc(var(--frame) + 4px + env(safe-area-inset-right, 0px)); }
+  .leaflet-control-zoom { display: block; }
+  .leaflet-bar a, .leaflet-bar a:hover, .leaflet-touch .leaflet-bar a { width: 34px; height: 34px; line-height: 32px; font-size: 18px; }
+  .leaflet-bottom.leaflet-right { top: auto; bottom: calc(var(--dock-bottom) + 52px); right: calc(var(--frame) + 4px); }
+  .leaflet-control-attribution { font-size: 9px; }
+
+  .panel-shell {
+    left: auto; right: calc(var(--frame) + 4px + env(safe-area-inset-right, 0px)); width: min(380px, 48vw);
+    top: calc(var(--chrome-bottom) + 2px); bottom: calc(var(--frame) + var(--safe-b)); height: auto;
+    transform: translateX(calc(100% + 50px));
+  }
+  .panel-shell.open { transform: none; }
+  .panel-head .x { min-width: 40px; min-height: 36px; }
+  .panel-body { padding: 10px; gap: 10px; }
+  .camera-viewport { max-height: 46dvh; }
+  .navigation { top: calc(var(--row1) + 48px); max-height: calc(var(--vvh, 100dvh) - var(--row1) - 48px - var(--frame)); width: min(300px, 46vw); }
+  body.menu-open .panel-shell.open { transform: translateX(calc(100% + 50px)); visibility: hidden; transition: transform 0.2s ease-in, visibility 0s linear 0.2s; }
+  .toasts { top: var(--chrome-bottom); right: auto; left: 50%; transform: translateX(-50%); width: min(340px, 60vw); }
+  body.keyboard-open .panel-shell { top: calc(var(--frame) + 2px); bottom: calc(var(--kb) + 4px); }
+}
+/* Small landscape phones (e.g. 568×320): drop filler words and tighten the report label so numbers never clip. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 700px) {
+  .mission-bar .m-long { display: none; }
+  .mission-bar { max-width: calc(100vw - 2 * var(--frame) - 240px); }
+  :root { --report-w: clamp(180px, 38vw, 230px); }
+  .report-btn { font-size: 11px; letter-spacing: 0.05em; gap: 6px; }
+  .report-btn .icon-art { width: 22px; height: 22px; }
+  .ticker { font-size: 8px; }
+}
+/* Pixel icons inside the mission chips (2× bounty bolt, Knight-Sense radar). Inline so the chip text can still truncate. */
+.mission-bar .chip-ico { display: inline-block; width: 16px; height: 16px; margin-right: 6px; vertical-align: -4px; image-rendering: auto; }
+@media (max-width: 720px) { .mission-bar .chip-ico { width: 15px; height: 15px; margin-right: 4px; vertical-align: -4px; } }

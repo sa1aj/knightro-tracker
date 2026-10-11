@@ -27,6 +27,7 @@
     const enabled = () => !!(state.admin && state.admin.allowed && state.admin.mode);
     const requestId = () => (crypto.randomUUID ? crypto.randomUUID()
       : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''));
+    const nums = (text) => fx.numNodes(text); // digits in the readable number face
     const when = (sec) => new Date(sec * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     const repaint = () => (state.panel === 'admin' ? ctx.render() : ctx.render({ panel: false }));
 
@@ -276,16 +277,16 @@
           ui.users && h('div', { class: 'admin-list' }, ui.users.map((u) => h('button', {
             type: 'button', class: 'admin-pick' + (ui.selected && ui.selected.id === u.id ? ' on' : ''), 'aria-pressed': String(!!(ui.selected && ui.selected.id === u.id)),
             onclick: () => { ui.selected = u; ui.pending = null; ui.msg.points = null; repaint(); },
-          }, h('strong', {}, u.displayName), h('span', { class: 'small muted' }, u.email), h('b', {}, u.score + ' pts')))),
+          }, h('strong', {}, u.displayName), h('span', { class: 'small muted' }, u.email), h('b', {}, ...nums(Number(u.score).toLocaleString('en-US') + ' pts'))))),
           ui.selected && h('div', { class: 'admin-card' },
-            h('p', {}, h('strong', {}, ui.selected.displayName), ' · current total ', h('strong', {}, ui.selected.score + ' pts')),
+            h('p', {}, h('strong', {}, ui.selected.displayName), ' · current total ', h('strong', {}, ...nums(Number(ui.selected.score).toLocaleString('en-US') + ' pts'))),
             !p && h('div', { class: 'admin-row' },
               field('Amount (+/−)', 'admin-amount', input('admin-amount', { type: 'number', step: 1, min: -1000, max: 1000, placeholder: '5 or -5' }, ui.amount, (v) => (ui.amount = v))),
               field('Reason', 'admin-reason', input('admin-reason', { maxlength: 140, placeholder: 'Contest prize' }, ui.reason, (v) => (ui.reason = v)))),
             !p && button('REVIEW CHANGE', reviewPoints, { section: 'points' }),
             p && h('div', { class: 'confirm-box', role: 'alertdialog', 'aria-label': 'Confirm point change' },
-              h('p', {}, (p.amount > 0 ? 'Add ' : 'Deduct ') + Math.abs(p.amount) + ' point(s) ' + (p.amount > 0 ? 'to ' : 'from ') + p.name + '?'),
-              h('p', { class: 'small' }, p.before + ' → ' + (p.before + p.amount) + ' pts · Reason: ' + p.reason),
+              h('p', {}, ...nums((p.amount > 0 ? 'Add ' : 'Deduct ') + Math.abs(p.amount) + ' point(s) ' + (p.amount > 0 ? 'to ' : 'from ') + p.name + '?')),
+              h('p', { class: 'small' }, ...nums(p.before + ' → ' + (p.before + p.amount) + ' pts · Reason: ' + p.reason)),
               h('div', { class: 'actions' },
                 button('CONFIRM', applyPoints, { section: 'points', busyLabel: 'SAVING…' }),
                 button('CANCEL', () => { ui.pending = null; repaint(); }, { cls: 'alt', section: 'points' })))),
@@ -326,7 +327,7 @@
             h('span', {},
               s.status === 'test' && h('b', { class: 'test-tag' }, 'TEST'), ' ',
               h('strong', {}, s.placeLabel || 'Sighting'),
-              h('small', {}, s.displayName + ' · ' + when(s.timestamp) + ' · ' + s.status + ' · ' + s.points + ' pt(s)'),
+              h('small', {}, ...nums(s.displayName + ' · ' + when(s.timestamp) + ' · ' + s.status + ' · ' + s.points + ' pt(s)')),
               s.caption && h('small', { class: 'quote' }, s.caption)),
             s.status === 'rejected' ? h('small', { class: 'muted' }, 'REMOVED')
               : ui.removeId === s.sightingId

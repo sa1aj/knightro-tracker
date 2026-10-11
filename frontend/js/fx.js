@@ -252,6 +252,15 @@
     }
   }
 
+  // ---------------------------------------------------------------- readable numbers
+  /** Nodes for text with each number run in <span class="num"> (clear digits; see styles.css). Never parses HTML. */
+  function numNodes(text) {
+    return String(text).split(/(\d+(?:[,.:]\d+)*)/).filter(Boolean).map((part) => {
+      if (!/^\d/.test(part)) return document.createTextNode(part);
+      const span = document.createElement('span'); span.className = 'num'; span.textContent = part; return span;
+    });
+  }
+
   // ---------------------------------------------------------------- toasts (centered on screen)
   const toastBox = document.getElementById('toasts');
   /** Show a big centered message. Text is set with textContent (safe for user captions). */
@@ -264,7 +273,7 @@
     el.append(h);
     if (sub) {
       const s = document.createElement('span');
-      s.textContent = sub;
+      s.append(...numNodes(sub));
       el.append(s);
     }
     toastBox.append(el);
@@ -279,7 +288,7 @@
     el.dataset.full = text;
     clearInterval(el._typer);
     if (reducedMotion()) {
-      el.textContent = text;
+      el.replaceChildren(...numNodes(text));
       return;
     }
     const host = el.parentElement;
@@ -298,10 +307,11 @@
         clearInterval(el._typer);
         el._typing = false;
         host.classList.remove('typing');
+        el.replaceChildren(...numNodes(full)); // typed: now show the digits in the readable face
       }
     }, speed);
   }
 
   window.KT.sfx = sfx;
-  window.KT.fx = { tween, ease, replay, burst, toast, typewriter, reducedMotion };
+  window.KT.fx = { tween, ease, replay, burst, toast, typewriter, reducedMotion, numNodes };
 })();

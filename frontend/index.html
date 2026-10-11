@@ -2,16 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0c0c0e" />
     <title>Knightro Tracker</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Silkscreen:wght@400;700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Silkscreen:wght@400;700&family=Space+Mono:wght@700&display=swap" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/styles.css" />
     <link rel="stylesheet" href="css/missions.css" />
     <link rel="stylesheet" href="css/dither.css" />
+    <link rel="stylesheet" href="css/refinements.css" />
     <script src="js/dither.js"></script>
   </head>
   <body class="booting">
@@ -28,7 +29,7 @@
     </button>
     <nav id="navigation" class="navigation" aria-label="Tracker menu" aria-hidden="true" inert>
       <header class="nav-head">
-        <span class="nav-badge"><img id="nav-helm" alt="" /></span>
+        <span class="nav-badge"><img id="nav-helm" class="icon-art" src="assets/photos/icons/menu.svg" alt="" width="34" height="34" /></span>
         <div><h2>KNIGHTRO HQ</h2><p class="nav-sub">TRACKER MENU</p></div>
       </header>
       <section class="nav-group" aria-labelledby="nav-campus-label">
@@ -37,13 +38,13 @@
       </section>
       <section class="nav-group" aria-labelledby="nav-explore-label">
         <h3 class="nav-label" id="nav-explore-label">EXPLORE</h3>
-        <button type="button" class="nav-item" data-panel="events"><span class="nav-ico" aria-hidden="true">▣</span><span class="nav-text">Campus events<small>Likely Knightro appearances</small></span></button>
-        <button type="button" class="nav-item" data-panel="leaderboard"><span class="nav-ico" aria-hidden="true">★</span><span class="nav-text">Leaderboard<small>Top Knight spotters</small></span></button>
+        <button type="button" class="nav-item" data-panel="events"><span class="nav-ico art" aria-hidden="true"><img src="assets/photos/icons/events.svg" alt="" width="26" height="26" /></span><span class="nav-text">Campus events<small>Likely Knightro appearances</small></span></button>
+        <button type="button" class="nav-item" data-panel="leaderboard"><span class="nav-ico art" aria-hidden="true"><img class="wide-art" src="assets/photos/icons/leaderboard.svg" alt="" width="26" height="26" /></span><span class="nav-text">Leaderboard<small>Top Knight spotters</small></span></button>
       </section>
       <section class="nav-group" aria-labelledby="nav-you-label">
         <h3 class="nav-label" id="nav-you-label">YOUR KNIGHT</h3>
-        <button type="button" class="nav-item" data-panel="reports"><span class="nav-ico" aria-hidden="true">▤</span><span class="nav-text">My photo reports<small>Status and points</small></span></button>
-        <button type="button" class="nav-item" data-panel="account"><span class="nav-ico" aria-hidden="true">◇</span><span class="nav-text"><span id="account-label">Sign in / create account</span><small id="account-sub">UCF email · no password</small></span></button>
+        <button type="button" class="nav-item" data-panel="reports"><span class="nav-ico art" aria-hidden="true"><img src="assets/photos/icons/photo-report.svg" alt="" width="26" height="26" /></span><span class="nav-text">My photo reports<small>Status and points</small></span></button>
+        <button type="button" class="nav-item" data-panel="account"><span class="nav-ico art" aria-hidden="true"><img id="account-ico" src="assets/photos/icons/sign-in.svg" alt="" width="26" height="26" /></span><span class="nav-text"><span id="account-label">Sign in / create account</span><small id="account-sub">UCF email · no password</small></span></button>
       </section>
       <section class="nav-group nav-admin" id="nav-admin" aria-labelledby="nav-admin-label" hidden>
         <h3 class="nav-label" id="nav-admin-label">ADMIN</h3>
@@ -56,18 +57,18 @@
 
     <div class="status" id="status" role="status"><i class="dot" aria-hidden="true"></i><span id="status-text"></span><button type="button" class="retry-chip" id="btn-retry" hidden>RETRY</button></div>
     <div class="mission-bar" aria-label="Live missions">
-      <button type="button" data-panel="bounties" id="mission-bounty">⚡ HIGH-VALUE BOUNTIES</button>
-      <button type="button" data-panel="sense" id="mission-sense">◎ KNIGHT-SENSE</button>
+      <button type="button" data-panel="bounties" id="mission-bounty"><img class="chip-ico" src="assets/photos/icons/bounty.svg" alt="" width="16" height="16" />DAILY BOUNTIES</button>
+      <button type="button" data-panel="sense" id="mission-sense"><img class="chip-ico" src="assets/photos/icons/knight-sense.svg" alt="" width="16" height="16" />KNIGHT-SENSE</button>
     </div>
 
     <div class="dock">
       <span></span>
       <button type="button" class="report-btn" id="btn-report" data-panel="report">
-        <img data-icon="pin" alt="" />
+        <img class="icon-art pin-art-icon" src="assets/photos/images/knightro-pin.svg" alt="" width="27" height="34" />
         <span id="report-label">REPORT SIGHTING</span>
       </button>
-      <button type="button" class="tile recent-btn" id="btn-recent" data-panel="recent" aria-label="Active sightings">
-        <img data-icon="helm" alt="" />
+      <button type="button" class="tile recent-btn" id="btn-recent" data-panel="recent" aria-label="Recent sightings">
+        <img class="icon-art" src="assets/photos/icons/recent-spots.svg" alt="" width="28" height="28" />
         <span>RECENT</span>
         <b class="badge" id="recent-count" hidden></b>
       </button>

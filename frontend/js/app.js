@@ -589,7 +589,7 @@
         h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
         h('p', { class: 'msg warn' }, 'Static demo: your sighting posts its location and caption to the shared map. Photo proof, accounts and points need the Knightro app server.'),
         h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
-        r.error && h('div', { class: 'msg err', role: 'alert' }, r.error),
+        r.error && errorBox(r.error),
         h('div', { class: 'panel-foot' },
           h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
           h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting, onclick: submitReport }, r.submitting ? 'POSTING…' : 'POST SIGHTING')),
@@ -620,7 +620,7 @@
         r.camera.element,
         h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
         h('p', { class: 'muted small' }, 'Live photos post immediately: 1 point, or 2 for your first daily bounty claim. Pins last 20 minutes.'),
-        r.error && h('div', { class: 'msg err', role: 'alert' }, r.error),
+        r.error && errorBox(r.error),
         h('div', { class: 'panel-foot' },
           h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.camera?.dispose(); r.camera = null; r.photo = null; r.captureToken = null; r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
           h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting || !r.photo || state.nextSightingAt > nowSec(), onclick: submitReport }, r.submitting ? 'POSTING…' : 'SUBMIT PHOTO')
@@ -631,7 +631,8 @@
     // done
     const saved = r.result, live = isPublic(saved);
     return [
-      h('div', { class: 'victory' }, h('img', { src: IMG.helm, alt: '' }), h('h3', {}, live ? 'SIGHTING POSTED' : 'REPORT RECEIVED')),
+      // Checkmark when the sighting is public; warning when it was saved but not posted.
+      h('div', { class: 'victory' + (live ? '' : ' not-posted') }, h('img', { class: 'result-art', src: 'assets/photos/icons/' + (live ? 'success' : 'warning') + '.svg', alt: '' }), h('h3', {}, live ? 'SIGHTING POSTED' : 'NOT POSTED')),
       h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(saved.lat, saved.long))),
       live
         ? h('div', { class: 'msg', role: 'status' }, ...numText((saved.points == null ? 'Saved to the shared sightings map. ' : '+' + pts(saved.points) + ' awarded. ') + 'Your pin is live on the map and in Recent Sightings.'))
@@ -677,7 +678,7 @@
 
   /** Failed request: say what went wrong and offer a retry. */
   function errorBox(message, retry) {
-    return h('div', { class: 'msg err error-box', role: 'alert' }, h('span', {}, message),
+    return h('div', { class: 'msg err error-box', role: 'alert' }, h('img', { class: 'msg-ico', src: 'assets/photos/icons/warning.svg', alt: '' }), h('span', {}, message),
       retry && h('button', { type: 'button', class: 'px-btn sm alt', onclick: () => { sfx.play('click'); retry(); } }, 'RETRY'));
   }
   /** A feature this deployment doesn't include (static GitHub Pages copy). Not an error, no retry. */

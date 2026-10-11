@@ -48,9 +48,10 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 :root {
   --dock-h: 60px; --dock-ring: 3px; --dock-drop: 7px; /* the RECENT tile's original stroke */
   --ticker-h: 58px;
-  --dock-bottom: calc(var(--frame) + 6px + var(--ticker-h) + var(--dock-drop) + 12px);
+  --ticker-gap: 12px; /* clear space between the ticker and the bottom frame */
+  --dock-bottom: calc(var(--frame) + var(--ticker-gap) + var(--ticker-h) + var(--dock-drop) + 12px);
 }
-.ticker { height: var(--ticker-h); min-height: 0; }
+.ticker { bottom: calc(var(--frame) + var(--ticker-gap)); height: var(--ticker-h); min-height: 0; }
 /* REPORT + RECENT are centred together as one group (landscape phones re-enable the grid below). */
 .dock { display: flex; justify-content: center; align-items: end; gap: 18px; }
 .dock > span:first-child { display: none; }
@@ -79,7 +80,7 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 .recent-btn .icon-art { width: 32px; height: 32px; }
 .report-btn .icon-art { width: 34px; height: 34px; }
 /* The pin art is taller than wide: keep its proportions at whatever height a layout gives the icon. */
-.report-btn .icon-art.pin-art-icon { width: auto; aspect-ratio: 223 / 286.1; }
+.report-btn .icon-art.pin-art-icon { width: auto; aspect-ratio: 228.8 / 290.4; }
 .nav-ico { width: 38px; height: 38px; }
 .nav-item { grid-template-columns: 38px minmax(0, 1fr) auto; }
 .nav-ico.art { background: var(--tile); box-shadow: inset 2px 2px 0 #fff, inset -2px -2px 0 var(--tile-sh), 0 0 0 2px var(--ink); }
@@ -92,15 +93,17 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 /* ------------------------------------------------------------------ Knightro map pin */
 /* Leaflet positions .kt-pin; only inner wrappers animate, so the tip stays on its coordinate. */
 .leaflet-container .asset-pin .pin-art img { width: 100%; height: 100%; }
-.sighting-pin .kt-pin-body { filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.55)); transform-origin: 50% 100%; }
+.sighting-pin .kt-pin-body { filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55)); transform-origin: 50% 100%; } /* straight-down shadow keeps the pin visually centred */
+/* Age label centred under the tip by layout (no translate maths that can drift while fonts load). */
+.sighting-pin .age { left: 0; right: 0; width: max-content; margin: 1px auto 0; transform: none; }
 .sighting-pin .pin-art { transform-origin: 50% 100%; }
 .asset-pin.sel .pin-art img { filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9)); }
 .pending-pin .pin-art img { filter: saturate(0.35) brightness(0.9); }
 .pending-pin .age { background: var(--warn); color: var(--ink); }
 .asset-pin.spotlight .kt-pin-body::after {
-  content: ''; position: absolute; left: 50%; bottom: -5px; width: 18px; height: 9px; margin-left: -9px;
+  content: ''; position: absolute; left: 0; right: 0; bottom: -5px; width: 18px; height: 9px; margin: 0 auto;
   border: 3px solid var(--gold); border-radius: 50%; pointer-events: none;
-  animation: spotRing 0.9s ease-out 3;
+  opacity: 0; animation: spotRing 0.9s ease-out 3 both; /* invisible except while pulsing: never left behind */
 }
 @keyframes spotRing { from { transform: scale(0.6); opacity: 1; } to { transform: scale(4); opacity: 0; } }
 .kt-drop .drop-art { display: block; width: 100%; height: 100%; }
@@ -125,20 +128,21 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 @media (max-width: 720px) {
   :root {
     --frame: 10px;
-    --row1: calc(var(--frame) + var(--safe-t) + 2px);        /* menu · title · sound */
+    --row1: calc(var(--frame) + var(--safe-t) + 8px);        /* menu · title · sound, clear of the frame */
     --row2: calc(var(--row1) + 48px);                         /* live status */
     --row3: calc(var(--row2) + 26px);                         /* mission chips */
     --chrome-bottom: calc(var(--row3) + 36px);
     --ticker-h: 40px;
     --dock-h: 50px; --dock-ring: 3px; --dock-drop: 7px;
-    --dock-bottom: calc(var(--frame) + var(--safe-b) + 2px + var(--ticker-h) + var(--dock-drop) + 10px);
+    --ticker-gap: 8px;
+    --dock-bottom: calc(var(--frame) + var(--safe-b) + var(--ticker-gap) + var(--ticker-h) + var(--dock-drop) + 10px);
   }
   .frame-corner { width: 18px; height: 18px; }
   .corner { top: var(--row1); width: 44px; height: 44px; }
   .corner.l { left: calc(var(--frame) + 4px); }
   .corner.r { right: calc(var(--frame) + 4px); }
   .corner img { width: 24px; }
-  .plaque { top: calc(var(--safe-t) + 4px); max-width: calc(100vw - 2 * (var(--frame) + 54px)); }
+  .plaque { top: var(--row1); max-width: calc(100vw - 2 * (var(--frame) + 54px)); padding: 4px 8px; }
   .status { top: var(--row2); padding: 3px 9px 2px; font-size: 10px; }
   .mission-bar { top: var(--row3); width: calc(100vw - 2 * var(--frame) - 12px); gap: 8px; }
   .mission-bar button { flex: 1 1 0; min-width: 0; height: 30px; margin-bottom: 4px; padding: 6px 6px 4px; font-size: 9px; }
@@ -168,7 +172,7 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
   .recent-btn .icon-art { width: 28px; height: 28px; }
   .recent-btn span { font-size: 9px; }
   .ticker {
-    bottom: calc(var(--frame) + var(--safe-b) + 2px); width: calc(100vw - 2 * var(--frame) - 8px);
+    bottom: calc(var(--frame) + var(--safe-b) + var(--ticker-gap)); width: calc(100vw - 2 * var(--frame) - 8px);
     padding: 5px 10px 3px; font-size: 10px; border-width: 2px;
   }
 
@@ -221,17 +225,17 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 @media (orientation: landscape) and (max-height: 500px) {
   :root {
     --frame: 8px;
-    --row1: calc(var(--frame) + 2px);
+    --row1: calc(var(--frame) + 6px);
     --row2: calc(var(--row1) + 46px);
     --chrome-bottom: calc(var(--row2) + 34px);
     --dock-h: 44px; --dock-ring: 3px; --dock-drop: 6px;
-    --dock-bottom: calc(var(--frame) + var(--safe-b) + var(--dock-drop) + 4px);
+    --dock-bottom: calc(var(--frame) + var(--safe-b) + var(--dock-drop) + 8px);
   }
   .frame-corner { width: 16px; height: 16px; }
   .corner { top: var(--row1); width: 42px; height: 42px; }
   .corner.l { left: calc(var(--frame) + 4px + env(safe-area-inset-left, 0px)); }
   .corner.r { right: calc(var(--frame) + 4px + env(safe-area-inset-right, 0px)); }
-  .plaque { top: 3px; padding: 3px 10px 3px; }
+  .plaque { top: var(--row1); padding: 4px 10px; }
   .plaque h1 { font-size: 13px; gap: 6px; }
   .knightro-window { width: 32px; height: 32px; margin-block: -5px; }
   .knightro-anim { width: 25px; }
@@ -287,3 +291,47 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 /* Pixel icons inside the mission chips (2× bounty bolt, Knight-Sense radar). Inline so the chip text can still truncate. */
 .mission-bar .chip-ico { display: inline-block; width: 16px; height: 16px; margin-right: 6px; vertical-align: -4px; image-rendering: auto; }
 @media (max-width: 720px) { .mission-bar .chip-ico { width: 15px; height: 15px; margin-right: 4px; vertical-align: -4px; } }
+
+/* ------------------------------------------------------------------ spinning Knightro in the title */
+/* Plain black window (no dot grid). Each frame has ~9% transparent margin around the figure, so the frame box is
+   sized so the figure itself fills the window's inner area (inside the 3px bevel); only empty margin is clipped. */
+.knightro-window { --kw: 56px; width: var(--kw); height: var(--kw); background: var(--ink); overflow: hidden; }
+.knightro-anim {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: auto; height: calc((var(--kw) - 6px) / 0.86); aspect-ratio: 800.41 / 858.63;
+}
+@media (max-width: 720px) { .knightro-window { --kw: 36px; margin-block: -6px; } }
+@media (max-width: 360px) { .knightro-window { --kw: 31px; margin-block: -5px; } }
+@media (orientation: landscape) and (max-height: 500px) { .knightro-window { --kw: 34px; margin-block: -6px; } }
+
+/* ------------------------------------------------------------------ pins keep their proportion to the map */
+/* app.js sets --pin-scale from the zoom (1 at street level, down to 0.55 zoomed out). Only the inner art scales,
+   from the anchor point, so pins stay on their coordinates; the clickable area shrinks with the art. */
+.kt-pin .kt-pin-body, .kt-drop .drop-art { scale: var(--pin-scale, 1); }
+.kt-drop .drop-art { transform-origin: 50% 100%; }
+.leaflet-marker-icon.kt-pin { pointer-events: none !important; }
+.leaflet-marker-icon.kt-pin .kt-pin-body { pointer-events: auto; }
+.map-root.far-out .kt-pin .age { display: none; } /* labels would only add clutter when zoomed far out */
+
+/* ------------------------------------------------------------------ title plaque inside the frame */
+/* Desktop: the plaque sits inside the gold frame, level with the corner buttons, with equal padding above and
+   below; the status chip and missions move down to keep their spacing. */
+.plaque { top: calc(var(--frame) + 8px); padding: 6px 16px; }
+.knightro-window { --kw: 44px; margin-block: -4px; }
+.status { top: calc(var(--frame) + 68px); }
+.mission-bar { top: calc(var(--frame) + 98px); }
+.panel-shell { top: calc(var(--frame) + 150px); }
+@media (max-width: 720px) {
+  .plaque { top: var(--row1); padding: 4px 8px; }
+  .knightro-window { --kw: 36px; margin-block: -4px; }
+  .status { top: var(--row2); }
+  .mission-bar { top: var(--row3); }
+}
+@media (max-width: 360px) { .knightro-window { --kw: 31px; margin-block: -3px; } }
+@media (orientation: landscape) and (max-height: 500px) {
+  .plaque { top: var(--row1); padding: 4px 10px; }
+  .knightro-window { --kw: 34px; margin-block: -5px; }
+  .status, .mission-bar { top: var(--row2); }
+}
+/* Knight-Sense chip: the radar icon takes room, so "· NEW HINT" drops a little earlier (the gold chip still signals it). */
+@media (max-width: 479px) { #mission-sense .m-long { display: none; } }

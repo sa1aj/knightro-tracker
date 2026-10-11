@@ -175,7 +175,7 @@
         .map((e) => ({ ...e, kind:'event', key:'e:' + e.eventId })),
       ...activeBounties().filter(b => b.campus === campus.id).map(b => ({...b,kind:'bounty',key:'b:'+b.bountyId})),
     ];
-    const groups = mapUtils.cluster(items, (item) => map.latLngToLayerPoint([item.lat, item.long]));
+    const groups = mapUtils.cluster(items, (item) => map.latLngToLayerPoint([item.lat, item.long]), 48 * pinScale);
     const seen = new Set();
     for (const group of groups) {
       const first = group.items[0], id = first.key;
@@ -291,6 +291,17 @@
     }
     render();
   }
+  // Pins keep their proportion to the map: full size at street level (zoom 17+), shrinking to 55% zoomed out.
+  // CSS scales only the inner art from its anchor (refinements.css); clustering uses the same scale.
+  let pinScale = 1;
+  function syncPinScale() {
+    pinScale = Math.max(0.55, Math.min(1, 1 - (17 - map.getZoom()) * 0.15));
+    const root = $('#map');
+    root.style.setProperty('--pin-scale', pinScale.toFixed(3));
+    root.classList.toggle('far-out', pinScale < 0.75);
+  }
+  map.on('zoom', syncPinScale); // every frame of a zoom animation, so pins resize smoothly
+  syncPinScale();
   map.on('zoomend moveend', () => renderMarkers());
   // A new container size can change what "fits"; update limits only, never reset the user's view.
   map.on('resize', () => applyCampusLimits(false));
@@ -658,6 +669,8 @@
     if (!el) return;
     marker.setZIndexOffset(900);
     fx.replay(el, 'spotlight');
+    clearTimeout(el._spotTimer);
+    el._spotTimer = setTimeout(() => el.classList.remove('spotlight'), 3000); // pulse ends; the pin returns to normal
     fx.replay(el.querySelector('.pin-art'), 'tap');
     el.focus({ preventScroll: true });
   }

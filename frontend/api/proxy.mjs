@@ -58,7 +58,7 @@ export default async function handler(req, res) {
     if (body.length > MAX_BODY) return reply(res, 413, 'Request is too large.');
   }
   try {
-    const response = await fetch(url, {method: req.method, headers, body, redirect:'manual', signal:AbortSignal.timeout(20000)});
+    const response = await fetch(url, {method: req.method, headers, body, redirect:'manual', signal:AbortSignal.timeout(req.method === 'POST' && req.query?.route === 'sightings' ? 24000 : 20000)});
     // Never follow redirects carrying a user's cookie or the private gateway token.
     if (response.status >= 300 && response.status < 400) return reply(res, 502, 'Knightro HQ returned an unexpected redirect.');
     const data = Buffer.from(await response.arrayBuffer());

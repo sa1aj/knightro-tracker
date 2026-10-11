@@ -2,7 +2,7 @@
 
 Production project: `uetdvbrfqmjbusivudam` (`knightro`). The SQL migrations and three Edge Functions in this folder implement the hosted backend. The Python backend remains available for local development and the earlier AWS deployment.
 
-Live frontend: [Knightro Tracker](https://knightro-tracker-potatogigabyte.vercel.app/). Vercel project `knightro-tracker` (`prj_6PTNUZzrXdYYjXNVHBBVSPgf9Cec`) uses `frontend` as its source root and has the private Production environment variables configured. It was initially deployed directly from source. When connecting this Git repository to Vercel, deploy the version containing this Supabase backend and keep the private environment variables configured.
+Live frontend: [Knightro Tracker](https://knightro-tracker-frontend-teal.vercel.app/). The main Vercel project is `knightro-tracker-team/knightro-tracker-frontend` (`prj_2sfie1Lo4lAnCpjGFaXgWRkhov5B`), using `frontend` as its source root. The earlier `knightro-tracker-potatogigabyte.vercel.app` deployment can share these Supabase accounts and data.
 
 ## Connect the existing Vercel site
 
@@ -12,6 +12,7 @@ Use `frontend` as the Vercel project root. Set these **private server environmen
 | --- | --- |
 | `KNIGHTRO_BACKEND_URL` | `https://uetdvbrfqmjbusivudam.supabase.co/functions/v1/knightro-api` |
 | `KNIGHTRO_PROXY_TOKEN` | The existing Vault secret named `knightro_PROXY_TOKEN` |
+| `KNIGHTRO_HF_TOKEN` | Private model read token, needed on the teal project hosting inference |
 
 Retrieve the proxy token in the Supabase dashboard's Vault page. Do not generate a different token, put it in browser JavaScript, or use a `NEXT_PUBLIC_` / `VITE_` prefix. Supabase service keys are not needed in Vercel. Only the Vercel server calls the Edge API; browsers use the same-origin `/api/*` proxy.
 
@@ -33,6 +34,8 @@ The database transaction enforces campus bounds, a fresh single-use two-minute c
 JPEGs are decoded, resized to at most 800 pixels on their longer side, and re-encoded without EXIF/GPS metadata. Images must be under 300 KB after normalization. The private `knightro-photos` bucket has no public policies. Authorized API requests serve photos through `/api/photos/<report UUID>`.
 
 Published photos are retained for 24 hours. Abandoned upload reservations expire after 10 minutes. The worker removes their objects and clears photo references; report history and earned points remain. Reservation accounting caps photos at 750 MB. Camera-only UI and capture tokens enforce the normal workflow, but cannot prove that a browser used a physical camera or that a photo shows Knightro.
+
+The private Vercel CPU checker classifies the normalized JPEG outside the database transaction. Confident matches publish; uncertain or unavailable checks save a private `pending` report with zero points. Pending photos also expire after 24 hours. Admin Mode provides photo review and audited, idempotent approval; it awards eligible points and preserves the unique bounty claim rule. Browser-supplied classification fields are ignored. See [model calibration and operations](../docs/photo-checker.md). No recurring training job or paid GPU inference endpoint is created.
 
 ## Manual event database imports
 

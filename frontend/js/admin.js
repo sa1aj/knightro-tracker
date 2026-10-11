@@ -18,7 +18,7 @@
       query: '', users: null, selected: null, amount: '', reason: '', pending: null,
       event: blankEvent(), editing: null, deleteEventId: null,
       testCaption: '', testBuilding: '',
-      sightings: null, removeId: null, removeReason: '',
+      sightings: null, removeId: null, removeReason: '', approveId: null,
       log: null, clearConfirm: false,
     };
     state.testSightings = [];
@@ -185,6 +185,16 @@
       ctx.focusOn(result.sighting.lat, result.sighting.long);
       repaint();
     }
+    async function approveSighting(sightingId) {
+      const result = await run('review', () => api.admin.approveSighting(sightingId), 'Photo approved. Eligible points have been awarded.');
+      ui.approveId = null;
+      if (result) {
+        state.leadersLoaded = false;
+        await afterChange();
+        await ctx.refreshSession();
+        repaint();
+      }
+    }
     async function removeSighting(sightingId) {
       const reason = ui.removeReason.trim();
       if (reason.length < 3) return (ui.msg.review = { ok: false, text: 'Give a short reason (3–140 characters).' }), repaint();
@@ -247,6 +257,7 @@
         case 'test-sighting-create': return 'Created test sighting: ' + (d.place || 'campus');
         case 'sighting-remove': return (d.result === 'deleted' ? 'Deleted test sighting' : 'Removed ' + d.reporter + "'s sighting (−" + d.points + ' pts)') + ': ' + d.reason;
         case 'test-data-clear': return 'Cleared test data (' + d.testEvents + ' events, ' + d.testSightings + ' sightings)';
+        case 'POST admin/sightings/approve': return 'Approved photo ' + d.sightingId;
         default: return entry.action;
       }
     }
@@ -319,7 +330,7 @@
           button('CREATE TEST SIGHTING', createTestSighting, { section: 'tests', busyLabel: 'CREATING…' }),
           message('tests')),
 
-        section('REVIEW SIGHTINGS', 'Last 24 hours. Removing a real sighting takes it off the map and revokes its points.',
+        section('REVIEW SIGHTINGS', 'Last 24 hours, pending photos first. View the photo before approving it. Approval awards eligible points; removal revokes points. Photos expire after 24 hours.',
           button('REFRESH', async () => { await loadReview(); repaint(); }, { cls: 'alt sm' }),
           ui.sightings === null && h('p', { class: 'small muted' }, 'Loading…'),
           ui.sightings && !ui.sightings.length && h('p', { class: 'small muted' }, 'No sightings in the last 24 hours.'),
@@ -328,7 +339,17 @@
               s.status === 'test' && h('b', { class: 'test-tag' }, 'TEST'), ' ',
               h('strong', {}, s.placeLabel || 'Sighting'),
               h('small', {}, ...nums(s.displayName + ' · ' + when(s.timestamp) + ' · ' + s.status + ' · ' + s.points + ' pt(s)')),
-              s.caption && h('small', { class: 'quote' }, s.caption)),
+              s.caption && h('small', { class: 'quote' }, s.caption),
+              s.photoCheck && h('small', { class: 'muted' }, s.photoCheck.status === 'unavailable' ? 'Checker unavailable · human review needed'
+                : 'Model score: ' + Number(s.photoCheck.score).toFixed(3) + ' · ' + (s.photoCheck.status === 'detected' ? 'Match detected' : 'Human review needed')),
+              s.photoUrl && h('a', { href: s.photoUrl, target: '_blank', rel: 'noopener' },
+                h('img', { src: s.photoUrl, alt: 'Submitted photo for review', class: 'admin-review-photo', loading: 'lazy' }), 'View full photo')),
+            s.status === 'pending' && s.photoUrl && (ui.approveId === s.sightingId
+              ? h('div', { class: 'confirm-box', role: 'alertdialog', 'aria-label': 'Confirm photo approval' },
+                h('p', {}, 'Does this photo show Knightro? Approving publishes the report and awards its eligible points.'),
+                button('YES, APPROVE', () => approveSighting(s.sightingId), { section: 'review', busyLabel: 'APPROVING…', cls: 'sm' }),
+                button('CANCEL', () => { ui.approveId = null; repaint(); }, { cls: 'alt sm' }))
+              : button('APPROVE', () => { ui.approveId = s.sightingId; ui.removeId = null; repaint(); }, { cls: 'sm' })),
             s.status === 'rejected' ? h('small', { class: 'muted' }, 'REMOVED')
               : ui.removeId === s.sightingId
                 ? h('div', { class: 'confirm-box' },

@@ -692,7 +692,7 @@
     }
     if (!campusSightings().length) {
       return [
-        h('div', { class: 'empty' }, h('img', { src: IMG.helm, alt: '' }), h('h3', {}, 'NO ACTIVE SIGHTINGS')),
+        h('div', { class: 'empty' }, h('img', { class: 'empty-art', src: 'assets/photos/icons/recent-spots.svg', alt: '' }), h('h3', {}, 'NO ACTIVE SIGHTINGS')),
         h('p', { class: 'muted' }, 'No active reports on this campus in the last 20 minutes. Spot him? Tap REPORT SIGHTING.'),
       ];
     }

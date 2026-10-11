@@ -335,3 +335,9 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 }
 /* Knight-Sense chip: the radar icon takes room, so "· NEW HINT" drops a little earlier (the gold chip still signals it). */
 @media (max-width: 479px) { #mission-sense .m-long { display: none; } }
+
+/* "No active sightings": the RECENT button's Knightro art on a plain black tile (no dot grid). */
+.empty img.empty-art {
+  width: 56px; height: 56px; padding: 5px; box-sizing: border-box; object-fit: contain; image-rendering: auto;
+  background: var(--ink); box-shadow: inset 2px 2px 0 var(--bevel-lo), inset -2px -2px 0 var(--bevel-hi);
+}

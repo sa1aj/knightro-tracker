@@ -3,8 +3,8 @@ import {authRequest,cookie,cookieToken,createSession,identity} from '../_shared/
 import {cleanPhoto} from '../_shared/photos.ts';
 import {checkPhoto} from '../_shared/photo-check.ts';
 
-const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/bounties','admin/test-events','admin/test-sightings','admin/sightings','admin/log']);
-const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/bounties','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear']);
+const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/bounties','admin/test-events','admin/test-sightings','admin/sightings','admin/log','admin/demo']);
+const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/bounties','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear','admin/demo']);
 
 function validateSubscription(value:any) {
   try {
@@ -126,6 +126,13 @@ Deno.serve(async req=> {
       if(!['main','downtown'].includes(data.campus)||!['set','reroll'].includes(data.mode)
         ||!/^[A-Za-z0-9-]{8,64}$/.test(data.requestId||'')) throw new APIError(400,'Choose a valid bounty change.');
       if(data.mode==='set') text(data,'sectorId',1,80);
+    }
+    if(route==='admin/demo') {
+      // Demo events/sightings: one set per kind. Admin + Admin Mode are checked in the database.
+      if(!['events','sightings'].includes(data.kind)) throw new APIError(400,'Choose demo events or demo sightings.');
+      for(const key of ['enabled','visible']) if(data[key]!==undefined&&typeof data[key]!=='boolean') throw new APIError(400,'Choose on or off.');
+      if(data.campus!==undefined&&!['main','downtown'].includes(data.campus)) throw new APIError(400,'Demo data is available for Main and Downtown campuses.');
+      if(data.enabled===undefined&&data.visible===undefined) throw new APIError(400,'Nothing to change.');
     }
     if(route==='admin/points') {
       uuid(data.userId);text(data,'reason',3,140);

@@ -638,3 +638,70 @@ body.keyboard-open .panel-shell { z-index: 840; }
   .x, #panel-close { transition: none; }
   .x:hover, .x:focus-visible, .x:active, #panel-close:hover, #panel-close:focus-visible, #panel-close:active { transform: none; } /* shading still shows the press */
 }
+
+/* ==========================================================================================
+   Pixel typography, charcoal icon surfaces, retro count badges, demo-data controls
+   ========================================================================================== */
+/* ---------- type: every interface face is a pixel font ---------- */
+/* Display: Silkscreen. Body: Pixelify Sans. Numbers: VT323, a monospaced pixel face whose 0/8, 1/7, 5/S and 6/b
+   stay distinct (the reason Space Mono was used before), with equal-width digits so timers and columns line up. */
+:root { --f-num: 'VT323', 'Silkscreen', ui-monospace, monospace; }
+button, input, select, textarea { font-family: inherit; } /* form controls otherwise fall back to the system font */
+.num { font-weight: 400; font-size: 1.35em; line-height: 0.85; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.mission-bar .num { font-size: 1.6em; }
+.status .num, .fresh-note .num, .label .num, .ticker .num, .px-btn .num, .report-btn .num { font-size: 1.45em; line-height: 0.8; }
+input[type="number"], #account-code { font-weight: 400; font-size: 22px; letter-spacing: 0.04em; }
+.kt-pin .age, .asset-pin .age { font: 400 14px/1 var(--f-num); letter-spacing: 0.03em; padding: 2px 4px 1px; }
+.bounty-clock { font: 400 20px var(--f-num); letter-spacing: 0.02em; }
+.leaderboard .rank { font: 400 20px/1 var(--f-num); }
+.bounty-art { font: 400 32px/1 var(--f-num); letter-spacing: 0; padding-top: 0; }
+.bounty-multiplier { font: 400 26px var(--f-num); letter-spacing: 0; }
+.stat-value { font-size: 36px; }
+
+/* ---------- charcoal: icon and button containers match the title box (artwork untouched) ---------- */
+.mission-bar button { background: var(--grey-strips), var(--charcoal); }
+.mission-bar button:active { background: var(--grey-strips-pressed), var(--charcoal); }
+.mission-bar button:disabled { background: var(--charcoal); }
+.status { background: rgba(43, 43, 43, 0.94); }
+.nav-ico { background-color: var(--charcoal); }
+.empty-state img, .empty img { background: var(--dt-lo-25) 0 0 / var(--ds), var(--charcoal); }
+.empty img.empty-art { background: var(--charcoal); }
+.leaderboard .rank { background-color: var(--charcoal); }
+.camera-flip { background: rgba(43, 43, 43, 0.9); }
+.kt-pin .age, .asset-pin .age { background: var(--charcoal); }
+.panel-head { background: var(--charcoal); }
+
+/* ---------- count badges (Recent, map stacks): one shared retro block ---------- */
+.badge, .stack-count {
+  display: grid; place-items: center; box-sizing: border-box; min-width: 24px; height: 24px; padding: 1px 6px 0;
+  border: 0; border-radius: 0; text-align: center; white-space: nowrap;
+  font: 400 19px/1 var(--f-num); letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--ink); text-shadow: none;
+  /* Orange accent face, light edge up-left, ember edge down-right, a dithered step only along the bottom (under the digits). */
+  background: var(--dt-ember-50) 0 100% / 8px 4px repeat-x, var(--accent);
+  box-shadow: 0 0 0 2px var(--ink), inset 2px 2px 0 #ffb3a8, inset -2px -2px 0 #a8392c;
+}
+.badge { top: -12px; right: -12px; }
+.stack-count { top: -8px; right: -12px; }
+.badge.pop { animation: badgeNudge 240ms steps(2, end); } /* small lift when the count changes */
+@keyframes badgeNudge { 50% { transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .badge.pop { animation: none; } }
+
+/* ---------- admin demo data ---------- */
+.demo-card { display: grid; gap: 8px; }
+.demo-vis { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.demo-vis .label { flex-basis: 100%; }
+.demo-tag { background: var(--accent); }
+.badge[hidden], .stack-count[hidden] { display: none; } /* zero count: keep the badge hidden */
+/* Digits everywhere: a digits-only alias of VT323 placed first in the display and body stacks, so every 0-9 in the
+   app (including plain sentences) uses the clear pixel numerals, while letters keep Silkscreen / Pixelify Sans.
+   size-adjust brings VT323's small digits up to the letter height. Same file the Google Fonts link already loads. */
+@font-face {
+  font-family: 'KT Digits'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url(https://fonts.gstatic.com/s/vt323/v18/pxiKyp0ihIEF2isfFJU.woff2) format('woff2');
+  unicode-range: U+0030-0039; size-adjust: 135%;
+}
+:root {
+  --f-display: 'KT Digits', 'Silkscreen', 'Courier New', monospace;
+  --f-body: 'KT Digits', 'Pixelify Sans', 'Trebuchet MS', system-ui, sans-serif;
+}
+@media (max-width: 720px) { .badge { top: -10px; right: -6px; } } /* phones: keep the Recent badge clear of the 8-10px frame */

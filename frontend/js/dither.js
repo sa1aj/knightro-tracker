@@ -11,7 +11,7 @@
 // Colors match the palette tokens in css/styles.css (kept here because this runs before first paint).
 (function () {
   'use strict';
-  const COLORS = { lo: '#b88b00', hi: '#ffe27a', gold: '#ffc904', ink: '#0c0c0e', line: '#353943', cream: '#cfc5ad', steel: '#4a4f5c', paper: '#ffffff' };
+  const COLORS = { lo: '#b88b00', hi: '#ffe27a', gold: '#ffc904', ink: '#0c0c0e', line: '#353943', cream: '#cfc5ad', steel: '#4a4f5c', paper: '#ffffff', ember: '#a8392c' };
   const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 
   function tile(color, w, h, level) {

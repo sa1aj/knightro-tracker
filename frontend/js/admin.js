@@ -91,8 +91,12 @@
         ui.msg.bounties = { ok: false, text: error.message }; ui.bounties = ui.bounties || [];
       }
     }
+    async function loadDemo() {
+      try { ui.demo = await api.admin.demo(); }
+      catch (error) { ui.msg['demo-events'] = { ok: false, text: error.message }; }
+    }
     async function loadPanel() {
-      await Promise.all([loadTestData(), loadReview(), loadLog(), loadBounties()]);
+      await Promise.all([loadTestData(), loadReview(), loadLog(), loadBounties(), loadDemo()]);
       // Visible test events also arrive in the public events feed; refresh it so markers and details match.
       if (ctx.loadEvents) await ctx.loadEvents();
       if (state.panel === 'admin') ctx.render();
@@ -102,6 +106,21 @@
     }
 
     // ---------------------------------------------------------------- actions
+    /** Demo events / sightings: one server-managed set each. The server checks admin + Admin Mode and never duplicates. */
+    async function setDemo(kind, change) {
+      const noun = kind === 'events' ? 'Demo events' : 'Demo sightings';
+      const result = await run('demo-' + kind, () => api.admin.setDemo({ kind, ...change }), (r) => {
+        const set = r[kind];
+        if (!set.enabled) return noun + ' are off' + ('visible' in change ? ' (visibility saved for next time).' : '. The generated set was removed.');
+        return noun + ' are on: ' + set.count + ' on ' + campusName(set.campus) + ', ' + (set.visible ? 'visible to users.' : 'admins only.');
+      });
+      if (!result) return;
+      ui.demo = result;
+      await afterChange();
+      if (kind === 'sightings') await ctx.refresh?.({ quiet: true }); // public sightings feed (visible demo sightings)
+      repaint();
+    }
+    const campusName = (id) => ({ main: 'Main Campus', downtown: 'Downtown Campus', rosen: 'Rosen College' }[id] || id);
     async function changeBounty(bounty, mode, sectorId) {
       const intent = JSON.stringify([bounty.bountyId, bounty.sectorId, mode, sectorId || null]);
       // Keep the request ID when retrying after a lost response: reroll only once.
@@ -272,6 +291,35 @@
       select.addEventListener('change', () => onChange(select.value));
       return select;
     }
+    function demoCard(kind) {
+      const set = ui.demo && ui.demo[kind];
+      const busy = !!ui.loading['demo-' + kind];
+      const here = ctx.campus().id;
+      const supported = !ui.demo || (ui.demo.campuses || []).includes(here);
+      const noun = kind === 'events' ? 'events' : 'sightings';
+      const what = kind === 'events' ? 'Three future events in the next 7 days at real venues' : 'A short walk of recent sightings at outdoor campus spots';
+      if (!set) return h('div', { class: 'admin-card' }, h('p', { class: 'small muted' }, 'Loading demo ' + noun + '…'));
+      const otherCampus = set.enabled && set.campus !== here;
+      return h('div', { class: 'admin-card demo-card' },
+        h('strong', {}, kind === 'events' ? 'DEMO EVENTS' : 'DEMO SIGHTINGS'),
+        h('p', { class: 'small muted' }, what + '. Scope: demo ' + noun + ' for the selected campus (' + campusName(here) + ').'),
+        h('button', { type: 'button', class: 'switch-row', role: 'switch', 'aria-checked': String(!!set.enabled), disabled: busy || (!set.enabled && !supported),
+          onclick: () => setDemo(kind, set.enabled ? { enabled: false } : { enabled: true, campus: here }) },
+          h('span', {}, h('strong', {}, busy ? 'SAVING…' : set.enabled ? 'ON' : 'OFF'),
+            h('small', {}, set.enabled ? set.count + ' ' + noun + ' on ' + campusName(set.campus) + '. Turning off removes only this set.'
+              : supported ? 'Off: no demo ' + noun + ' exist.' : 'No mapped demo venues for ' + campusName(here) + '. Switch to Main or Downtown.')),
+          h('span', { class: 'switch', 'aria-hidden': 'true' })),
+        otherCampus && supported && button('MOVE SET TO ' + campusName(here).toUpperCase(), () => setDemo(kind, { enabled: true, campus: here }), { cls: 'alt sm', section: 'demo-' + kind, busyLabel: 'MOVING…' }),
+        h('div', { class: 'demo-vis', role: 'group', 'aria-label': 'Who can see demo ' + noun },
+          h('span', { class: 'label' }, 'Visibility'),
+          ...[[false, 'ADMINS ONLY'], [true, 'VISIBLE TO USERS']].map(([value, label]) => h('button', {
+            type: 'button', class: 'px-btn alt sm', 'aria-pressed': String(set.visible === value), disabled: busy,
+            onclick: () => set.visible !== value && setDemo(kind, { visible: value }),
+          }, label))),
+        h('p', { class: 'small muted' }, set.enabled ? (set.visible ? 'Regular users see them, labeled TEST.' : 'Only admins in Admin Mode see them.')
+          : 'Saved for when the set is on. A set that is off is hidden from everyone.'),
+        message('demo-' + kind));
+    }
     function section(title, note, ...children) {
       return h('section', { class: 'admin-sec' }, h('h3', { class: 'admin-sec-title' }, title), note && h('p', { class: 'small muted' }, note), ...children);
     }
@@ -318,6 +366,7 @@
         case 'test-event-delete': return 'Deleted test event "' + d.title + '"';
         case 'test-sighting-create': return 'Created test sighting: ' + (d.place || 'campus');
         case 'sighting-remove': return (d.result === 'deleted' ? 'Deleted test sighting' : 'Removed ' + d.reporter + "'s sighting (−" + d.points + ' pts)') + ': ' + d.reason;
+        case 'demo-events': case 'demo-sightings': return (entry.action === 'demo-events' ? 'Demo events ' : 'Demo sightings ') + (d.enabled ? 'on (' + d.count + ')' : 'off') + ' · ' + (d.visible ? 'visible to users' : 'admins only') + ' · ' + campusName(d.campus);
         case 'test-data-clear': return 'Cleared test data (' + d.testEvents + ' events, ' + d.testSightings + ' sightings)';
         case 'POST admin/sightings/approve': return 'Approved photo ' + d.sightingId;
         default: return entry.action;
@@ -372,10 +421,14 @@
                 button('CANCEL', () => { ui.pending = null; repaint(); }, { cls: 'alt', section: 'points' })))),
           message('points')),
 
+        section('DEMO DATA', 'Generated test data for checking the map and lists. Always marked TEST, worth 0 points, and kept out of rewards, rankings, bounties and Knightro probability.',
+          demoCard('events'), demoCard('sightings')),
+
         section('TEST EVENTS', 'Fake events for testing. Always marked TEST and never award points. Hidden from other users unless you turn on visibility.',
           ...state.testEvents.map((e) => h('div', { class: 'admin-item' },
-            h('span', {}, h('b', { class: 'test-tag' }, 'TEST'), ' ', h('b', { class: 'vis-tag' + (e.visible ? ' on' : '') }, e.visible ? 'VISIBLE TO USERS' : 'ADMINS ONLY'), ' ', h('strong', {}, e.title), h('small', {}, when(e.startsAt) + ' · ' + (e.location || 'Map pin'))),
-            ui.deleteEventId === e.eventId
+            h('span', {}, h('b', { class: 'test-tag' }, 'TEST'), ' ', e.demo && h('b', { class: 'test-tag demo-tag' }, 'DEMO'), e.demo && ' ', h('b', { class: 'vis-tag' + (e.visible ? ' on' : '') }, e.visible ? 'VISIBLE TO USERS' : 'ADMINS ONLY'), ' ', h('strong', {}, e.title), h('small', {}, when(e.startsAt) + ' · ' + (e.location || 'Map pin'))),
+            e.demo ? h('span', { class: 'small muted' }, 'Managed by Demo Events')
+            : ui.deleteEventId === e.eventId
               ? h('span', { class: 'actions' }, button('DELETE', () => deleteEvent(e.eventId), { cls: 'danger sm', section: 'events' }), button('KEEP', () => { ui.deleteEventId = null; repaint(); }, { cls: 'alt sm' }))
               : h('span', { class: 'actions' }, button(e.visible ? 'HIDE' : 'SHOW', () => setEventVisible(e, !e.visible), { cls: 'alt sm', section: 'events', busyLabel: '…' }), button('EDIT', () => editEvent(e), { cls: 'alt sm' }), button('DELETE', () => { ui.deleteEventId = e.eventId; repaint(); }, { cls: 'alt sm' })))),
           !state.testEvents.length && h('p', { class: 'small muted' }, 'No upcoming test events.'),

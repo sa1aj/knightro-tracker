@@ -53,7 +53,8 @@ Only confirmed account UUIDs granted in `knightro.admins` have administrator acc
 - `POST /api/admin/cooldown {enabled}`: own-account cooldown bypass.
 - `GET /api/admin/users?q=`: account name/email search with scores, for admins in Admin Mode.
 - `POST /api/admin/points {userId,amount,reason,requestId,confirm:true}`: nonzero integer amount up to ±1000, reason 3–140 characters, idempotent request ID. Cannot reduce a score below zero.
-- `GET /api/admin/test-events`; `POST /api/admin/test-events {title,description,startsAt,endsAt,lat,long,eventId?}`; `POST /api/admin/test-events/delete {eventId,confirm:true}`.
+- `GET /api/admin/test-events`; `POST /api/admin/test-events {title,description,startsAt,endsAt,lat,long,eventId?,visible?}`; `POST /api/admin/test-events/delete {eventId,confirm:true}`.
+- `GET /api/admin/demo`; `POST /api/admin/demo {kind:"events"|"sightings",enabled?,visible?,campus?:"main"|"downtown"}`: one generated demo set per kind (3 future "(Test)" events, or a short walk of recent test sightings) with fixed record IDs, so repeats never duplicate. Off removes only that set; visibility defaults to admins only and is enforced in `GET events`/`GET sightings`. Demo sightings are never stored as sightings, so they cannot earn points or affect bounties, the leaderboard or alerts. Requires Admin Mode; audited.
 - `GET /api/admin/test-sightings`; `POST /api/admin/test-sightings {lat,long,caption}`. Test reports earn zero points and are excluded from public sightings/leaderboard.
 - `GET /api/admin/sightings?status=all|accepted|rejected`: up to 100 reports per filter from the last day, newest first, with private `photoCheck` status/score/cutoff/model metadata and photo URLs. Default: all. Rejected includes automatic non-matches and removed reports. There is no manual approval route.
 - `POST /api/admin/sightings/remove {sightingId,reason,confirm:true}`: rejects the report and revokes its points.

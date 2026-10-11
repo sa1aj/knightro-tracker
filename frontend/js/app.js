@@ -150,9 +150,16 @@
   let reportPin = null; // the confirmed report location, shown on the map behind the report panel
 
   const adminOn = () => !!(state.admin && state.admin.allowed && state.admin.mode);
-  const campusSightings = () => [...allSightings(), ...(adminOn() ? state.testSightings : [])]
-    .filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && mapUtils.contains(campus, {lat:s.lat, lng:s.long}))
-    .sort((a, b) => b.timestamp - a.timestamp);
+  // Visible demo sightings arrive in the public feed too; in Admin Mode the admin list's copy wins (one pin, not two).
+  const campusSightings = () => {
+    const tests = adminOn() ? state.testSightings : [];
+    const ids = new Set(tests.map((s) => s.sightingId));
+    return [...allSightings().filter((s) => !ids.has(s.sightingId)), ...tests]
+      .filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && mapUtils.contains(campus, {lat:s.lat, lng:s.long}))
+      .sort((a, b) => b.timestamp - a.timestamp);
+  };
+  /** Real sightings only: test and demo data never drive the live count, the ticker or alerts. */
+  const liveSightings = () => campusSightings().filter((s) => !s.isTest);
   // Not yet ended (ongoing events stay); a listing without an end time counts as an instant at its start.
   // A test event an admin made visible arrives in the public feed too; in Admin Mode the admin list's copy wins (one pin, not two).
   const activeEvents = () => {
@@ -420,7 +427,7 @@
         sfx.play('online');
         fx.toast('BACK ONLINE', 'Live sightings are updating again.', 'good', 1800);
       }
-      const others = fresh.filter((s) => !myPosts.has(s.sightingId));
+      const others = fresh.filter((s) => !myPosts.has(s.sightingId) && !s.isTest);
       if (!firstLoad && others.length) announce(others[0], others.length);
     } catch (err) {
       if (!state.netError) {
@@ -768,16 +775,18 @@
     const photo = photoFor(s);
     const mine = ownPosts.has(s.sightingId);
     return [
-      s.isTest && h('p', { class: 'msg warn' }, 'TEST SIGHTING · only visible to admins in Admin Mode · 0 points'),
+      s.isTest && h('p', { class: 'msg warn' }, s.isDemo
+        ? 'TEST SIGHTING · demo data, not a real Knightro sighting · 0 points' + (s.visible ? ' · visible to everyone' : ' · admins only')
+        : 'TEST SIGHTING · only visible to admins in Admin Mode · 0 points'),
       // Moderation status exactly as the server reported it; a pending report is never shown as public.
       s.status === 'pending' && h('p', { class: 'msg warn' }, 'NOT POSTED · Take a new photo with Knightro clearly in frame.'),
       s.status === 'rejected' && h('p', { class: 'msg err' }, 'NOT PUBLIC · This report was removed or Knightro was not detected.'),
-      h('div', { class: 'label' }, mine ? 'Your sighting' : s.sightingId === campusSightings()[0]?.sightingId ? 'Latest sighting' : 'Sighting'),
+      h('div', { class: 'label' }, mine ? 'Your sighting' : s.isTest ? 'Test sighting' : s.sightingId === liveSightings()[0]?.sightingId ? 'Latest sighting' : 'Sighting'),
       h('figure', { class: 'photo-fig' },
         h('img', { class: `photo${photo.pixel ? ' pixel' : ''}`, src: photo.src, alt: s.photoUrl ? 'Reported Knightro sighting photo' : 'Illustration of Knightro' }),
         h('figcaption', { class: 'label' }, ...numText(s.photoUrl
           ? (s.status === 'confirmed' ? 'Photo confirmed' : s.status === 'pending' ? 'Photo report · not posted' : 'Community photo report') + (s.points == null ? '' : ' · ' + pts(s.points))
-          : s.isTest ? 'Test sighting · illustration' : s.source === 'aws' ? 'Shared map sighting · no photo' : 'Legacy sighting · illustration'))
+          : s.isDemo ? 'Demonstration illustration · not a photo' : s.isTest ? 'Test sighting · illustration' : s.source === 'aws' ? 'Shared map sighting · no photo' : 'Legacy sighting · illustration'))
       ),
       h('div', { class: `fresh-note ${fresh ? 'live' : 'old'}` },
         ...numText(fresh ? `SPOTTED ${timeAgo(s).toUpperCase()}. HE MAY STILL BE NEARBY.` : `SEEN ${timeAgo(s).toUpperCase()}. HE MAY HAVE MOVED ON.`)),
@@ -1231,7 +1240,7 @@
     }
 
     // Ticker: typed out when the message changes; ages update quietly.
-    const latest = campusSightings()[0];
+    const latest = liveSightings()[0];
     const tickerKey = !state.loaded ? 'loading' : state.netError ? 'error' : latest ? latest.sightingId : 'empty';
     const tickerText = !state.loaded
       ? 'CONNECTING TO KNIGHTRO HQ…'
@@ -1250,7 +1259,7 @@
     }
     $('#ticker').classList.toggle('bad', !!state.netError);
 
-    setNum($('#status-text'), !state.loaded ? 'CONNECTING…' : state.netError ? 'OFFLINE' : `LIVE · ${count} ACTIVE`);
+    setNum($('#status-text'), !state.loaded ? 'CONNECTING…' : state.netError ? 'OFFLINE' : `LIVE · ${liveSightings().length} ACTIVE`);
     $('#btn-retry').hidden = !state.netError;
     $('#status').classList.toggle('bad', !!state.netError);
     $('#account-label').textContent = state.user ? state.user.displayName : 'Sign in / create account';
@@ -1301,7 +1310,7 @@
     sfx.play('whoosh');
     fx.replay(recenterButton, 'spin');
   }
-  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents, loadGame,
+  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents, loadGame, refresh,
     buildings: () => buildings, campus: () => campus });
   $('#admin-mode-toggle').addEventListener('click', () => admin.setMode(!adminOn()));
   const soundBtn = $('#btn-sound');

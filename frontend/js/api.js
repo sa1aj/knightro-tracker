@@ -120,6 +120,8 @@
       removeSighting: (sightingId, reason) => app('/admin/sightings/remove', {sightingId, reason, confirm:true}),
       clearTestData: () => app('/admin/test-data/clear', {confirm:true}),
       log: () => app('/admin/log'),
+      demo: () => app('/admin/demo'),
+      setDemo: (body) => app('/admin/demo', body),
     },
   };
 })();

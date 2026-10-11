@@ -31,7 +31,7 @@
   const set = (name, value) => root.setProperty(name, value);
   for (const [name, color] of Object.entries(COLORS)) {
     for (const pct of [12, 25, 50, 75]) set(`--dt-${name}-${pct}`, flat(color, pct));
-    for (const [prefix, len] of [['dr', 32], ['drs', 8]]) {
+    for (const [prefix, len] of [['dr', 32], ['drs', 8], ['drq', 4]]) {
       const fade = ramp(len);
       set(`--${prefix}-${name}-down`, tile(color, 4, len, (x, y) => fade(y)));
       set(`--${prefix}-${name}-up`, tile(color, 4, len, (x, y) => fade(len - 1 - y)));

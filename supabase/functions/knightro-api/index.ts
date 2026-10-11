@@ -1,9 +1,10 @@
 import {APIError,allowedFrontendOrigin,boundedBody,config,fail,hash,json,limit,location,randomToken,requireSecret,rpc,supabase,text,ucfEmail,uuid} from '../_shared/backend.ts';
 import {authRequest,cookie,cookieToken,createSession,identity} from '../_shared/auth.ts';
 import {cleanPhoto} from '../_shared/photos.ts';
+import {checkPhoto} from '../_shared/photo-check.ts';
 
 const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/test-events','admin/test-sightings','admin/sightings','admin/log']);
-const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear']);
+const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/sightings/approve','admin/test-data/clear']);
 
 function validateSubscription(value:any) {
   try {
@@ -84,24 +85,34 @@ Deno.serve(async req=> {
       const payload={id,lat:data.lat,long:data.long,caption:data.caption||'',captureHash:await hash(capture),bytes:photo.length};
       const reservation=await rpc('photo/reserve',user.id,payload);
       const response=await supabase('/storage/v1/object/knightro-photos/'+reservation.path,{method:'POST',headers:{'Content-Type':'image/jpeg','x-upsert':'false'},body:new Uint8Array(photo)});
+      let checkedPhoto=photo;
       // Existing immutable object can be from this same request's earlier upload.
       if(!response.ok) {
         const result=await response.json().catch(()=>({}));
         if(![409,'409','Duplicate'].includes(result.statusCode)&&result.error!=='Duplicate') throw new APIError(503,'Photo upload failed. Please retry.');
+        // Classify the immutable stored object, not a different photo sent on a retry.
+        const stored=await supabase('/storage/v1/object/authenticated/knightro-photos/'+reservation.path);
+        if(!stored.ok) throw new APIError(503,'Photo upload could not be recovered. Please retry.');
+        checkedPhoto=new Uint8Array(await stored.arrayBuffer());
+        if(checkedPhoto.length>300000) throw new APIError(503,'Stored photo is unavailable.');
       }
       // Failed commits leave a reserved object for scheduled cleanup; never delete a possibly committed photo.
-      return json(await rpc('POST sightings',user.id,payload),201);
+      // Classification runs outside the database transaction. Browser-supplied
+      // classification fields are never forwarded. Outages safely queue review.
+      const photoCheck=await checkPhoto(checkedPhoto,settings);
+      return json(await rpc('POST sightings',user.id,{...payload,photoCheck}),201);
     }
     if(['presence','admin/test-sightings','admin/test-events'].includes(route)) location(data);
     if(route==='push/subscribe') data.subscription=validateSubscription(data.subscription);
     if(route==='push/unsubscribe') text(data,'endpoint',1,2048);
     if(['admin/mode','admin/cooldown'].includes(route)&&typeof data.enabled!=='boolean') throw new APIError(400,'Choose on or off.');
-    if(['admin/points','admin/test-events/delete','admin/sightings/remove','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
+    if(['admin/points','admin/test-events/delete','admin/sightings/remove','admin/sightings/approve','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
     if(route==='admin/points') {
       uuid(data.userId);text(data,'reason',3,140);
       if(!Number.isInteger(data.amount)||data.amount===0||Math.abs(data.amount)>1000||!/^[A-Za-z0-9-]{8,64}$/.test(data.requestId||'')) throw new APIError(400,'Invalid point adjustment.');
     }
     if(route==='admin/sightings/remove') {uuid(data.sightingId);text(data,'reason',3,140);}
+    if(route==='admin/sightings/approve') uuid(data.sightingId);
     if(route==='admin/test-sightings') text(data,'caption',0,200,true);
     if(route==='admin/test-events') {
       data.title=text(data,'title',3,80);data.description=text(data,'description',0,400,true);

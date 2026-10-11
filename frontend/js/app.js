@@ -777,7 +777,7 @@
       h('p', {}, state.user.email),
       h('p', {class:'stat'}, h('span', {class:'label'}, 'Total points'), h('strong', {class:'num stat-value'}, fmt(state.user.score))),
       state.admin?.allowed && h('p', {class:'msg warn'}, 'This account is authorized for Admin Mode. Use the ADMIN section of the menu.'),
-      h('p', {class:'msg'}, (state.authMode === 'password' ? 'Your UCF email address has not been verified. ' : 'UCF email verified. ') + 'Live photo reports earn points immediately; your first report in today’s bounty section earns double. Your email stays private.'),
+      h('p', {class:'msg'}, (state.authMode === 'password' ? 'Your UCF email address has not been verified. ' : 'UCF email verified. ') + 'Approved photo reports earn points; your first approved report in today’s bounty section earns double. Some photos need admin review. Your email stays private.'),
       h('p', {id:'cooldown-note',class:'small'}),
       h('p', {class:'muted small'}, 'An essential sign-in cookie keeps this browser signed in for 14 days. Signing out removes it. No advertising cookies are used.'),
       h('button', {type:'button',class:'px-btn alt',onclick:async (event) => {
@@ -956,7 +956,7 @@
     if (!CONFIG.ACCOUNTS) return [unavailableBox('The leaderboard')];
     if (!state.leadersLoaded) return [h('p',{class:'muted loading-line'},'Loading the Knight leaderboard…')];
     return [
-      h('p',{class:'small'},'All-time campus spotters. Live photo reports earn 1 point; the first daily bounty claim earns 2.'),
+      h('p',{class:'small'},'All-time campus spotters. Approved photo reports earn 1 point; the first daily bounty claim earns 2.'),
       state.leadersError && errorBox(state.leadersError, loadLeaderboard),
       !state.leadersError && !state.leaders.length && h('div',{class:'empty-state'},h('img',{src:IMG.helm,alt:''}),h('p',{},'No points on the board yet. Be the first Knight!')),
       h('ol',{class:'leaderboard'},state.leaders.map((person, i) => h('li',{class: i < 3 ? 'top top-' + (i + 1) : null},
@@ -1079,7 +1079,7 @@
   }
   function reportsView() {
     if (!CONFIG.ACCOUNTS) return [unavailableBox('Photo reports')];
-    return [h('p',{class:'small'},'Your live photo reports and awarded points. Reports appear immediately; removed reports earn no points.'),
+    return [h('p',{class:'small'},'Your photo reports and awarded points. Pending reports stay private and earn points after approval; removed reports earn no points.'),
       state.reportsError && errorBox(state.reportsError, loadReports),
       ...state.reports.map(r => h('article',{class:'report-card'},h('strong',{},r.placeLabel),h('span',{class:'report-status '+r.status},r.status.toUpperCase()),h('span',{class:'small'},...numText(r.status === 'pending' ? pts(r.eligiblePoints) + ' eligible after confirmation' : r.status === 'rejected' ? 'Not approved · 0 pts' : pts(r.points) + ' awarded')))),
       !state.reports.length && h('p',{class:'msg'},state.reportsLoaded ? 'No photo reports yet. Spot Knightro and take a photo.' : 'Loading your reports…'),

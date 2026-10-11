@@ -18,7 +18,7 @@
         // Session cookies only ever go to our own origin; the AWS API gets no credentials.
         credentials: sameOrigin ? 'same-origin' : 'omit', cache: 'no-store',
         ...(body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(path === '/sightings' && body !== undefined ? 25000 : 15000),
       });
     } catch (error) {
       throw Object.assign(new Error(error.name === 'TimeoutError'
@@ -115,6 +115,7 @@
       testSightings: () => app('/admin/test-sightings'),
       createTestSighting: (body) => app('/admin/test-sightings', body),
       sightings: () => app('/admin/sightings'),
+      approveSighting: (sightingId) => app('/admin/sightings/approve', {sightingId, confirm:true}),
       removeSighting: (sightingId, reason) => app('/admin/sightings/remove', {sightingId, reason, confirm:true}),
       clearTestData: () => app('/admin/test-data/clear', {confirm:true}),
       log: () => app('/admin/log'),

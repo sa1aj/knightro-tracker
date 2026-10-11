@@ -13,6 +13,7 @@ This project can use the existing Knightro Supabase backend. It does not need a 
    | --- | --- |
    | `KNIGHTRO_BACKEND_URL` | `https://uetdvbrfqmjbusivudam.supabase.co/functions/v1/knightro-api` |
    | `KNIGHTRO_PROXY_TOKEN` | The existing `knightro_PROXY_TOKEN` secret from this Supabase project's Vault |
+   | `KNIGHTRO_HF_TOKEN` | Private token with read access to the trained Knightro model |
 
 3. Obtain the existing proxy token through an authorized Supabase operator. Store it as a sensitive server environment variable. Never put it in Git, client JavaScript, screenshots, or a `NEXT_PUBLIC_` / `VITE_` variable. No Supabase service key belongs in Vercel.
 4. Deploy the latest commit on `main` after saving the variables. Adding variables does not change a previously built deployment.
@@ -27,3 +28,5 @@ The backend approves this exact production hostname and the newer `knightro-trac
 - An unrecognized-origin error means the deployed hostname differs from the approved exact origins.
 
 GitHub integration will deploy later source changes automatically. Database migrations and Supabase Edge Function releases are deployed separately using the instructions in `supabase/README.md`. The event feed reads the most recently imported completed scraper database; no recurring scraper is configured.
+
+The teal project also hosts the private CPU photo checker at `/internal/photo-check`. Model access is server-only. [Photo checker operations](photo-checker.md) covers deployment, calibration, and the admin review queue. Other approved frontend sites share this checker through Supabase.

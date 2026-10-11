@@ -1301,7 +1301,7 @@
     sfx.play('whoosh');
     fx.replay(recenterButton, 'spin');
   }
-  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents,
+  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents, loadGame,
     buildings: () => buildings, campus: () => campus });
   $('#admin-mode-toggle').addEventListener('click', () => admin.setMode(!adminOn()));
   const soundBtn = $('#btn-sound');

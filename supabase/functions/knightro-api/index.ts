@@ -3,8 +3,8 @@ import {authRequest,cookie,cookieToken,createSession,identity} from '../_shared/
 import {cleanPhoto} from '../_shared/photos.ts';
 import {checkPhoto} from '../_shared/photo-check.ts';
 
-const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/test-events','admin/test-sightings','admin/sightings','admin/log']);
-const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear']);
+const reads=new Set(['auth/session','sightings','leaderboard','events','game','my-reports','push/config','admin/state','admin/users','admin/bounties','admin/test-events','admin/test-sightings','admin/sightings','admin/log']);
+const writes=new Set(['auth/signup','auth/login','auth/logout','camera-session','sightings','presence','push/subscribe','push/unsubscribe','admin/mode','admin/cooldown','admin/points','admin/bounties','admin/test-events','admin/test-events/delete','admin/test-sightings','admin/sightings/remove','admin/test-data/clear']);
 
 function validateSubscription(value:any) {
   try {
@@ -120,7 +120,13 @@ Deno.serve(async req=> {
     if(route==='push/subscribe') data.subscription=validateSubscription(data.subscription);
     if(route==='push/unsubscribe') text(data,'endpoint',1,2048);
     if(['admin/mode','admin/cooldown'].includes(route)&&typeof data.enabled!=='boolean') throw new APIError(400,'Choose on or off.');
-    if(['admin/points','admin/test-events/delete','admin/sightings/remove','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
+    if(['admin/points','admin/bounties','admin/test-events/delete','admin/sightings/remove','admin/test-data/clear'].includes(route)&&data.confirm!==true) throw new APIError(400,'Confirm this action before applying it.');
+    if(route==='admin/bounties') {
+      uuid(data.bountyId);text(data,'currentSectorId',1,80);
+      if(!['main','downtown'].includes(data.campus)||!['set','reroll'].includes(data.mode)
+        ||!/^[A-Za-z0-9-]{8,64}$/.test(data.requestId||'')) throw new APIError(400,'Choose a valid bounty change.');
+      if(data.mode==='set') text(data,'sectorId',1,80);
+    }
     if(route==='admin/points') {
       uuid(data.userId);text(data,'reason',3,140);
       if(!Number.isInteger(data.amount)||data.amount===0||Math.abs(data.amount)>1000||!/^[A-Za-z0-9-]{8,64}$/.test(data.requestId||'')) throw new APIError(400,'Invalid point adjustment.');

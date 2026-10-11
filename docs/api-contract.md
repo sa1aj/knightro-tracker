@@ -48,6 +48,8 @@ Only confirmed account UUIDs granted in `knightro.admins` have administrator acc
 
 - `GET /api/auth/session` adds `admin:{allowed,mode,bypassCooldown}` for authorized accounts.
 - `GET /api/admin/state` and `POST /api/admin/mode {enabled}`. Turning the mode off clears cooldown bypass.
+- `GET /api/admin/bounties`: active daily bounties and configured replacement areas. Requires Admin Mode.
+- `POST /api/admin/bounties {campus,bountyId,currentSectorId,mode:"set"|"reroll",sectorId?,requestId,confirm:true}`: choose a configured replacement or randomly pick a different area. Preserves the day's bounty ID, expiration, earned points, and existing claims. Rejects stale selections; retries with the same request ID do not reroll twice. Changes are audited. Main has multiple alternatives; Downtown currently has one area and Rosen has no daily bounty.
 - `POST /api/admin/cooldown {enabled}`: own-account cooldown bypass.
 - `GET /api/admin/users?q=`: account name/email search with scores, for admins in Admin Mode.
 - `POST /api/admin/points {userId,amount,reason,requestId,confirm:true}`: nonzero integer amount up to ±1000, reason 3–140 characters, idempotent request ID. Cannot reduce a score below zero.

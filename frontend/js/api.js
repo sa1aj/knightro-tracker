@@ -109,6 +109,8 @@
       setCooldownBypass: (enabled) => app('/admin/cooldown', {enabled}),
       users: (q) => app('/admin/users?q=' + encodeURIComponent(q)),
       adjustPoints: (body) => app('/admin/points', body),
+      bounties: () => app('/admin/bounties'),
+      changeBounty: (body) => app('/admin/bounties', body),
       testEvents: () => app('/admin/test-events'),
       saveTestEvent: (body) => app('/admin/test-events', body),
       deleteTestEvent: (eventId) => app('/admin/test-events/delete', {eventId, confirm:true}),

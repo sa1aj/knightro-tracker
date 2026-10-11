@@ -78,6 +78,8 @@ Reload the site to show the Admin menu. Admin Mode gates moderation, test data, 
 
 ## Deployment and migration history
 
+Admin bounty area controls require `20261011071831_admin_bounty_area.sql`. Public test-event sharing requires `20261011080000_test_event_visibility.sql`. Apply both migrations and deploy `knightro-api` along with the updated frontend; a frontend-only Vercel release does not update the database. Changes to the area retain the same daily bounty ID, so previous claims and earned points are not reset. Rerolls exclude the current area and require another configured area on the same campus.
+
 The checked-in migration versions match the hosted project's migration history. This matters because replaying a differently timestamped copy would attempt to create the same tables again.
 
 For future deployments, use an authenticated Supabase CLI. Discover the installed commands with `supabase --help`, `supabase db push --help`, and `supabase functions deploy --help`. Link this project, provide the database password securely when required, then apply pending migrations and deploy the functions:

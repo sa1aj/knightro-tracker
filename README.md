@@ -58,6 +58,8 @@ Keep the proxy token and Supabase service keys out of frontend JavaScript and Gi
 
 Administrators are granted by a **confirmed account UUID** in `knightro.admins`; an unverified email address cannot grant admin access. [First administrator setup](supabase/README.md#grant-the-first-administrator) explains the process. Admin Mode provides moderation, points adjustments, test data, and an audited cooldown bypass.
 
+Admin Mode also provides **Bounty Areas**: choose a different configured section or reroll to another section for the rest of today. Existing points and daily bounty claims are preserved. Public test-event visibility requires the `test_event_visibility` database migration; frontend Git pushes do not apply Supabase migrations automatically. Visible test events are labeled as tests and do not award points.
+
 ## Update the event feed manually
 
 Run the scraper when new data is wanted, or import an existing completed SQLite database. From the repository root:

@@ -19,6 +19,7 @@
       event: blankEvent(), editing: null, deleteEventId: null,
       testCaption: '', testBuilding: '',
       sightings: null, sightingsFilter: 'all', reviewRequest: 0, removeId: null, removeReason: '',
+      bounties: null, areas: [], bountySelection: {}, bountyPending: null,
       log: null, clearConfirm: false,
     };
     state.testSightings = [];
@@ -82,17 +83,38 @@
       try { ui.log = (await api.admin.log()).entries; }
       catch (error) { ui.msg.log = { ok: false, text: error.message }; ui.log = ui.log || []; }
     }
+    async function loadBounties() {
+      try {
+        const result = await api.admin.bounties();
+        ui.bounties = result.bounties || []; ui.areas = result.areas || [];
+      } catch (error) {
+        ui.msg.bounties = { ok: false, text: error.message }; ui.bounties = ui.bounties || [];
+      }
+    }
     async function loadPanel() {
-      await Promise.all([loadTestData(), loadReview(), loadLog()]);
+      await Promise.all([loadTestData(), loadReview(), loadLog(), loadBounties()]);
       // Visible test events also arrive in the public events feed; refresh it so markers and details match.
       if (ctx.loadEvents) await ctx.loadEvents();
       if (state.panel === 'admin') ctx.render();
     }
     async function afterChange() {
-      await Promise.all([loadTestData(), loadReview(), loadLog()]);
+      await Promise.all([loadTestData(), loadReview(), loadLog(), ctx.loadEvents?.()]);
     }
 
     // ---------------------------------------------------------------- actions
+    async function changeBounty(bounty, mode, sectorId) {
+      const intent = JSON.stringify([bounty.bountyId, bounty.sectorId, mode, sectorId || null]);
+      // Keep the request ID when retrying after a lost response: reroll only once.
+      if (ui.bountyPending?.intent !== intent) ui.bountyPending = {
+        intent, body: { campus: bounty.campus, bountyId: bounty.bountyId, currentSectorId: bounty.sectorId,
+          mode, ...(mode === 'set' ? { sectorId } : {}), requestId: requestId(), confirm: true },
+      };
+      const result = await run('bounties', () => api.admin.changeBounty(ui.bountyPending.body),
+        r => 'Bounty area changed to ' + r.bounty.sectorName + '. Existing points and daily claims are preserved.');
+      if (result) { ui.bountyPending = null; delete ui.bountySelection[bounty.campus]; }
+      await Promise.all([loadBounties(), loadLog(), ctx.loadGame?.()]);
+      repaint();
+    }
     async function setMode(on) {
       const result = await run('mode', () => api.admin.setMode(on), on ? 'Admin Mode is on.' : 'Admin Mode is off. Testing overrides were turned off.');
       if (!result) return;
@@ -253,6 +275,24 @@
     function section(title, note, ...children) {
       return h('section', { class: 'admin-sec' }, h('h3', { class: 'admin-sec-title' }, title), note && h('p', { class: 'small muted' }, note), ...children);
     }
+    function bountyControls(bounty) {
+      const areas = ui.areas.filter(area => area.campus === bounty.campus);
+      const alternatives = areas.filter(area => area.sectorId !== bounty.sectorId);
+      const chosen = alternatives.some(area => area.sectorId === ui.bountySelection[bounty.campus])
+        ? ui.bountySelection[bounty.campus] : alternatives[0]?.sectorId;
+      const select = h('select', { id: 'bounty-area-' + bounty.campus, disabled: !alternatives.length || ui.loading.bounties },
+        ...alternatives.map(area => h('option', { value: area.sectorId }, area.sectorName)));
+      if (chosen) select.value = chosen;
+      select.addEventListener('change', () => { ui.bountySelection[bounty.campus] = select.value; });
+      return h('div', { class: 'admin-card' },
+        h('strong', {}, bounty.campus === 'main' ? 'MAIN CAMPUS' : 'DOWNTOWN'),
+        h('p', { class: 'small' }, 'Current area: ', h('b', {}, bounty.sectorName)),
+        alternatives.length ? field('Choose a replacement', 'bounty-area-' + bounty.campus, select)
+          : h('p', { class: 'small muted' }, 'Only one area is configured for this campus; there is no alternative to reroll.'),
+        h('div', { class: 'actions' },
+          button('APPLY AREA', () => changeBounty(bounty, 'set', select.value), { section: 'bounties', busyLabel: 'SAVING…', disabled: !alternatives.length }),
+          button('REROLL AREA', () => changeBounty(bounty, 'reroll'), { cls: 'alt', section: 'bounties', busyLabel: 'SAVING…', disabled: !alternatives.length })));
+    }
     function photoHistoryFilter() {
       const select = h('select', { id: 'admin-photo-filter' },
         h('option', { value: 'all' }, 'All photos'),
@@ -271,6 +311,7 @@
       switch (entry.action) {
         case 'admin-mode': return 'Admin Mode ' + (d.enabled ? 'on' : 'off');
         case 'cooldown-bypass': return 'Cooldown bypass ' + (d.enabled ? 'on' : 'off');
+        case 'bounty-area': return (d.mode === 'reroll' ? 'Rerolled' : 'Changed') + ' ' + d.campus + ' bounty: ' + d.before + ' → ' + d.after;
         case 'points': return (d.amount > 0 ? '+' : '') + d.amount + ' pts to ' + d.user + ' (' + d.before + ' → ' + d.after + '): ' + d.reason;
         case 'test-event-create': return 'Created test event "' + d.title + '"';
         case 'test-event-edit': return 'Edited test event "' + d.title + '"';
@@ -301,6 +342,13 @@
             h('span', {}, h('strong', {}, bypass ? 'BYPASS ACTIVE' : 'BYPASS OFF'), h('small', {}, bypass ? 'Your reports skip the cooldown.' : 'Normal cooldown applies to you.')),
             h('span', { class: 'switch', 'aria-hidden': 'true' })),
           message('cooldown')),
+
+        section('BOUNTY AREAS', 'Choose or reroll today’s area for everyone. A reroll always picks a different area. Resets at campus midnight; existing points and each user’s daily claim stay unchanged.',
+          button('REFRESH AREAS', async () => { await loadBounties(); repaint(); }, { cls: 'alt sm', section: 'bounties' }),
+          ui.bounties === null && h('p', { class: 'small muted' }, 'Loading bounty areas…'),
+          ...(ui.bounties || []).map(bountyControls),
+          h('p', { class: 'small muted' }, 'Rosen reports earn standard points; Rosen has no daily bounty area.'),
+          message('bounties')),
 
         section('POINTS MANAGEMENT', 'Find a user, then add or deduct points with a reason.',
           h('div', { class: 'admin-row' },

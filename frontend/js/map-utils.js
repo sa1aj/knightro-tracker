@@ -62,6 +62,33 @@
         .map(e => util.eventHint(e, buildings)).filter(Boolean);
       return { ...feed, events, filter: 'likely-knightro' };
     },
+    /**
+     * Rolling window from the start of today to the start of the day `days` calendar days later, in UCF's time zone,
+     * as Unix seconds (e.g. Thursday 00:00 → next Thursday 00:00). Midnights are resolved in that zone, so a window
+     * crossing a daylight-saving change is 167 or 169 hours long.
+     */
+    dayWindow(now, days = 7, timeZone = 'America/New_York') {
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' });
+      const parts = (t) => Object.fromEntries(fmt.formatToParts(new Date(t * 1000)).map((p) => [p.type, p.value]));
+      // Unix time of local midnight on (y, m, d); Date.UTC rolls day overflow into the next month/year.
+      const midnight = (y, m, d) => {
+        const target = Date.UTC(y, m - 1, d) / 1000;
+        let t = target;
+        for (let i = 0; i < 3; i++) {
+          const q = parts(t);
+          t -= Date.UTC(+q.year, +q.month - 1, +q.day, +q.hour, +q.minute, +q.second) / 1000 - target;
+        }
+        return t;
+      };
+      const p = parts(now);
+      return { start: midnight(+p.year, +p.month, +p.day), end: midnight(+p.year, +p.month, +p.day + days) };
+    },
+    /** An event's end; a listing without an end time is treated as an instant at its start. */
+    eventEnd: (event) => (Number.isFinite(event.endsAt) ? Math.max(event.endsAt, event.startsAt) : event.startsAt),
+    /** True when an event's scheduled time overlaps the range (multi-day events included; zero-length = an instant). */
+    overlaps(event, range) {
+      return event.startsAt < range.end && Math.max(util.eventEnd(event), event.startsAt + 1) > range.start;
+    },
     cluster(items, project, radius = 48) {
       const groups = [];
       for (const item of items) {

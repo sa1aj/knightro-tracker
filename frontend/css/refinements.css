@@ -349,3 +349,292 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 .victory.not-posted h3 { color: var(--warn); }
 .msg.err.error-box .msg-ico { width: 26px; height: 26px; flex: none; object-fit: contain; image-rendering: auto; }
 .msg.err.error-box > span { flex: 1 1 150px; }
+
+/* ------------------------------------------------------------------ Knightro medallion map pins */
+/* Round pins centred on their point: scale, hover lift, tap pulse and the highlight ring all work from the centre.
+   Normal and hover art are stacked in the same box and cross-fade. */
+.sighting-pin .kt-pin-body, .sighting-pin .pin-art, .kt-drop .drop-art { transform-origin: 50% 50%; }
+.sighting-pin .pin-art img, .kt-drop .drop-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; transition: opacity 140ms ease; }
+.kt-drop .drop-art { position: relative; }
+.kt-drop .drop-art img { transform-origin: 50% 50%; }
+.pin-hover { opacity: 0; }
+.asset-pin:hover .pin-hover, .asset-pin:focus-visible .pin-hover, .kt-drop.lifted .pin-hover { opacity: 1; }
+.asset-pin:hover .pin-normal, .asset-pin:focus-visible .pin-normal, .kt-drop.lifted .pin-normal { opacity: 0; }
+.asset-pin.sighting-pin:hover .kt-pin-body, .asset-pin.sighting-pin:focus-visible .kt-pin-body { transform: scale(1.12); }
+.asset-pin.sighting-pin.sel .kt-pin-body { transform: scale(1.08); }
+.kt-drop.lifted .drop-art img { transform: none; }
+.kt-drop.lifted .drop-art { transform: translateY(-10px) scale(1.15); filter: drop-shadow(3px 10px 0 rgba(0, 0, 0, 0.35)); }
+.kt-drop .drop-art { transition: transform 0.15s var(--pop), filter 0.15s; }
+.sighting-pin .age { margin-top: 3px; }
+.asset-pin.sighting-pin.spotlight .kt-pin-body::after {
+  top: 0; bottom: 0; left: 0; right: 0; width: auto; height: auto; margin: 0; border-radius: 50%;
+}
+.asset-pin.sighting-pin.spotlight .kt-pin-body::after { animation-name: spotRingRound; }
+@keyframes spotRingRound { from { transform: scale(0.95); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
+
+/* ==========================================================================================
+   Report flow: photo → current location & submit
+   ========================================================================================== */
+.report-photo { margin: 0; display: grid; gap: 8px; justify-items: start; }
+.report-photo img { width: 100%; max-height: 220px; object-fit: contain; background: var(--ink); border: 3px solid var(--ink); box-shadow: 0 0 0 2px var(--line); }
+.report-photo.review img { max-height: 160px; }
+.loc-summary {
+  display: grid; gap: 4px; justify-items: start; padding: 10px 12px; background: var(--ink);
+  border-left: 4px solid var(--gold); box-shadow: inset 0 0 0 2px var(--line);
+}
+.loc-summary strong { color: var(--gold-hi); }
+.loc-problem { display: grid; gap: 10px; justify-items: start; }
+/* The current step's main action stays reachable at the bottom of the report panel while its content scrolls. */
+body.report-open .panel-body > .panel-foot {
+  position: sticky; bottom: 0; z-index: 2; margin: 4px -14px -14px; padding: 10px 14px calc(10px + var(--safe-b));
+  background: var(--screen); box-shadow: 0 -3px 0 var(--line);
+}
+@media (max-width: 720px) {
+  /* The report panel is nearly full screen: from just under the top row to the bottom frame. */
+  body.report-open .panel-shell { top: calc(var(--row1) + 50px); height: auto; bottom: calc(var(--frame) + var(--safe-b)); }
+}
+/* A keyboard-open sheet rises over the top row; keep it above the corner buttons so nothing overlaps its header. */
+body.keyboard-open .panel-shell { z-index: 840; }
+.report-pin .drop-art { transform-origin: 50% 100%; }
+
+/* ==========================================================================================
+   Event medallions, raised Report/bounty art, and the orange accent
+   ========================================================================================== */
+/* ---------- event pins: three frames, swapped discretely (no cross-fade, no float) ---------- */
+.event-pin .kt-pin-body { animation: none; transform-origin: 50% 50%; }
+.event-pin .event-frame { animation: none; opacity: 1; visibility: hidden; object-fit: contain; image-rendering: auto; }
+.event-pin [data-frame="1"] .frame-0, .event-pin [data-frame="2"] .frame-1, .event-pin [data-frame="3"] .frame-2 { visibility: visible; }
+.event-pin .frame-1, .event-pin .frame-2 { transform: translateX(1.4%); } /* frames 2–3 sit 1.4% left in their files */
+.event-pin:hover .kt-pin-body, .event-pin.sel .kt-pin-body { transform: scale(1.08); }
+
+/* ---------- shared orange accent: the mute button's cross-out ---------- */
+:root { --accent: var(--bad); }
+#btn-sound.muted::after { background: var(--accent); }
+.badge, .stack-count { background: var(--accent); color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.badge { top: -11px; right: -11px; padding: 4px 6px 3px; }
+.stack-count { border: 0; right: -10px; top: -6px; }
+/* Restrained extra uses: the current menu item's edge and the ticker's typing cursor. */
+.nav-item[aria-current] { box-shadow: var(--raise), inset 4px 0 0 var(--accent); }
+.ticker .cursor { background: var(--accent); }
+
+/* ---------- Report Sighting: raised, lit from the top-left ---------- */
+/* Dithered highlight along the top, shade along the bottom and right; the middle (where the label sits) stays clean. */
+.dock .report-btn {
+  background:
+    var(--drs-hi-down) 0 0 / 8px 16px repeat-x,
+    var(--drs-lo-up) 0 100% / 8px 16px repeat-x,
+    var(--drs-lo-left) 100% 0 / 16px 8px repeat-y,
+    var(--gold);
+  text-shadow: none; font-weight: 700;
+}
+.dock .report-btn:hover { background-color: var(--gold-hi); }
+.dock .report-btn:active { /* pressed: light and shade swap, like a key pushed in */
+  background-image: var(--drs-lo-down), var(--drs-hi-up), var(--drs-hi-right);
+  background-position: 0 0, 0 100%, 0 0;
+}
+.dock .report-btn.active { background: var(--screen); }
+.report-btn::after { background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent); } /* softer shine over the label */
+
+/* ---------- 2× bounty tile: same light direction, clear numerals ---------- */
+.bounty-art {
+  font: 700 25px/1 var(--f-num); letter-spacing: -0.02em; padding-top: 1px;
+  background:
+    var(--drs-hi-down) 0 0 / 8px 16px repeat-x,
+    var(--drs-hi-right) 0 0 / 16px 8px repeat-y,
+    var(--drs-lo-up) 0 100% / 8px 16px repeat-x,
+    var(--drs-lo-left) 100% 0 / 16px 8px repeat-y,
+    var(--gold);
+}
+.asset-pin:hover .bounty-art { background-color: var(--gold-hi); }
+.bounty-multiplier { font: 700 20px var(--f-num); letter-spacing: -0.02em; }
+
+/* ------------------------------------------------------------------ title Knightro: no square behind the head */
+/* The window stays as an invisible, fixed-size box (so nothing around it shifts); only its fill and bevel go. */
+.knightro-window { background: none; box-shadow: none; }
+
+/* ==========================================================================================
+   Grey controls: the Report button's depth recipe in the grey family
+   Light from the top-left: dithered highlight along the top, dithered shade along the bottom and right, two-tone
+   bevel; pressed swaps them. Full-height buttons get the gradual ramps; small buttons and rows get thin 4 px strips,
+   so labels always sit on a clean middle.
+   ========================================================================================== */
+:root {
+  --grey-hi: #4a4f5c; --grey-lo: #0d0e11;
+  --grey-ramps: var(--drs-steel-down) 0 0 / 8px 16px repeat-x, var(--drs-ink-up) 0 100% / 8px 16px repeat-x, var(--drs-ink-left) 100% 0 / 16px 8px repeat-y;
+  --grey-ramps-pressed: var(--drs-ink-down) 0 0 / 8px 16px repeat-x, var(--drs-steel-up) 0 100% / 8px 16px repeat-x, var(--drs-steel-right) 0 0 / 16px 8px repeat-y;
+  --grey-strips: var(--dt-steel-50) 0 0 / 8px 4px repeat-x, var(--dt-ink-75) 0 100% / 8px 4px repeat-x;
+  --grey-strips-pressed: var(--dt-ink-75) 0 0 / 8px 4px repeat-x, var(--dt-steel-50) 0 100% / 8px 4px repeat-x;
+  --grey-raise: inset 2px 2px 0 var(--grey-hi), inset -2px -2px 0 var(--grey-lo);
+  --grey-sunk: inset 2px 2px 0 var(--grey-lo), inset -2px -2px 0 var(--grey-hi);
+}
+/* Secondary buttons (BACK, RETRY, REFRESH, CANCEL, RETAKE …) */
+.px-btn.alt { background: var(--grey-ramps), var(--screen-2); box-shadow: 0 0 0 2px var(--ink), var(--grey-raise); }
+.px-btn.alt:hover:not(:disabled) { background: var(--grey-ramps), #2b2f38; }
+.px-btn.alt:active:not(:disabled) { background: var(--grey-ramps-pressed), var(--screen-2); box-shadow: 0 0 0 2px var(--ink), var(--grey-sunk); }
+.px-btn.alt.sm { background: var(--grey-strips), var(--screen-2); }
+.px-btn.alt.sm:hover:not(:disabled) { background: var(--grey-strips), #2b2f38; }
+.px-btn.alt.sm:active:not(:disabled) { background: var(--grey-strips-pressed), var(--screen-2); }
+.px-btn.alt[aria-pressed="true"], .px-btn.alt.on { box-shadow: 0 0 0 2px var(--ink), var(--grey-sunk), inset 0 -3px 0 var(--accent); } /* selected */
+.px-btn.alt:disabled { background: var(--screen-2); box-shadow: 0 0 0 2px var(--line); opacity: 0.5; }
+/* Panel header buttons (BACK / close on desktop; the phone close stays gold) */
+.x { background: var(--grey-strips), var(--screen-2); box-shadow: var(--grey-raise); }
+.x:hover { background: var(--grey-strips), #2b2f38; }
+.x:active { background: var(--grey-strips-pressed), var(--screen-2); box-shadow: var(--grey-sunk); }
+/* Menu rows and switch rows (the current menu item keeps its gold face and orange edge) */
+.nav-item:not([aria-current]), .switch-row { background: var(--grey-strips), var(--screen-2); box-shadow: var(--grey-raise); }
+.nav-item:not([aria-current]):hover, .nav-item:not([aria-current]):focus-visible, .switch-row:hover { background: var(--grey-strips), #262a33; }
+.nav-item:not([aria-current]):active, .switch-row:active { background: var(--grey-strips-pressed), var(--screen-2); box-shadow: var(--grey-sunk); }
+
+/* Event details popup: one static image (frame 3); no float, no cross-fade. Map event pins are unaffected. */
+.event-hero { animation: none; }
+.event-hero .event-hero-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
+
+/* ==========================================================================================
+   The same lit-from-top-left texture on the remaining flat controls (shared ramps, palettes unchanged)
+   ========================================================================================== */
+:root {
+  /* cream family (tiles, map zoom): white light along the top, cream shade along the bottom and right */
+  --cream-ramps: var(--drs-paper-down) 0 0 / 8px 16px repeat-x, var(--drs-cream-up) 0 100% / 8px 16px repeat-x, var(--drs-cream-left) 100% 0 / 16px 8px repeat-y;
+  --cream-ramps-pressed: var(--drs-cream-down) 0 0 / 8px 16px repeat-x, var(--drs-paper-up) 0 100% / 8px 16px repeat-x, var(--drs-cream-right) 0 0 / 16px 8px repeat-y;
+  /* gold family, small controls */
+  --gold-strips: var(--dt-hi-50) 0 0 / 8px 4px repeat-x, var(--dt-lo-75) 0 100% / 8px 4px repeat-x;
+  --gold-strips-pressed: var(--dt-lo-75) 0 0 / 8px 4px repeat-x, var(--dt-hi-50) 0 100% / 8px 4px repeat-x;
+}
+/* cream tiles: Recent, menu, sound */
+.tile, .dock .recent-btn { background: var(--cream-ramps), var(--tile); }
+.tile:hover, .dock .recent-btn:hover { background: var(--cream-ramps), #fff; }
+.tile:active, .dock .recent-btn:active { background: var(--cream-ramps-pressed), var(--tile); }
+.tile:disabled { background: var(--tile); opacity: 0.5; cursor: default; }
+/* map zoom buttons */
+.leaflet-bar a, .leaflet-touch .leaflet-bar a { background: var(--dt-paper-75) 0 0 / 8px 4px repeat-x, var(--dt-cream-75) 0 100% / 8px 4px repeat-x, var(--tile); }
+.leaflet-bar a:hover { background: var(--dt-paper-75) 0 0 / 8px 4px repeat-x, var(--dt-cream-75) 0 100% / 8px 4px repeat-x, #fff; }
+.leaflet-bar a:active { background: var(--dt-cream-75) 0 0 / 8px 4px repeat-x, var(--dt-paper-75) 0 100% / 8px 4px repeat-x, var(--tile); }
+.leaflet-bar a.leaflet-disabled { background: var(--tile); color: #8a8578; opacity: 0.6; cursor: default; }
+/* mission chips (ink, gold text) take the grey ramps; the alert chip takes the gold strips */
+.mission-bar button { background: var(--grey-strips), var(--ink); }
+.mission-bar button:hover, .mission-bar button:focus-visible { background: var(--gold-strips), var(--gold); }
+.mission-bar button:active { background: var(--grey-strips-pressed), var(--ink); }
+.mission-bar .has-alert, .mission-bar .has-alert:active { background: var(--gold-strips), var(--gold); }
+.mission-bar button:disabled { background: var(--ink); opacity: 0.5; }
+/* retry chip */
+.retry-chip { background: var(--gold-strips), var(--gold); }
+.retry-chip:hover { background: var(--gold-strips), var(--gold-hi); }
+.retry-chip:active { background: var(--gold-strips-pressed), var(--gold); }
+.retry-chip:disabled { background: var(--gold); opacity: 0.5; }
+/* clickable cards keep their gold edge stripe and gain a lit top and shaded bottom; pressed swaps them */
+.feed-item, .event-row, .bounty-card, .admin-pick {
+  background: var(--dt-gold-50) 0 0 / 6px 8px repeat-y, var(--dt-steel-50) 0 0 / 8px 4px repeat-x, var(--dt-ink-75) 0 100% / 8px 4px repeat-x, var(--screen-2);
+}
+.feed-item:hover, .event-row:hover, .bounty-card:hover, .admin-pick:hover { background-color: #262a33; }
+.feed-item:active, .event-row:active, .bounty-card:active, .admin-pick:active {
+  background: var(--dt-gold-50) 0 0 / 6px 8px repeat-y, var(--dt-ink-75) 0 0 / 8px 4px repeat-x, var(--dt-steel-50) 0 100% / 8px 4px repeat-x, var(--screen-2);
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+.admin-pick.on, .admin-pick[aria-pressed="true"] { background-color: #2a2614; }
+/* switch rows: disabled while saving */
+.switch-row:disabled { background: var(--screen-2); box-shadow: none; opacity: 0.55; cursor: progress; }
+
+/* ---------- admin test events: visibility tag ---------- */
+.vis-tag { display: inline-block; padding: 1px 5px; font: 9px var(--f-display); letter-spacing: 0.08em; color: var(--dim); box-shadow: inset 0 0 0 2px var(--line); }
+.vis-tag.on { color: var(--ink); background: var(--ok); box-shadow: none; }
+.dock .recent-btn.active, .dock .recent-btn.active:hover { background: var(--gold-strips), var(--gold-hi); } /* selected (list open) */
+
+/* ==========================================================================================
+   One raised-gold system: report-flow buttons, title, top box, frame/panel edges, close buttons
+   Reference: .dock .report-btn and .bounty-art (light from the top-left, dithered highlight on top,
+   dithered shade along the bottom and right, clean middle for the label).
+   ========================================================================================== */
+:root {
+  /* Short ramps (--drq-*, 8px deep, same 2px dots) for buttons too short for the Report button's 16px ramps. */
+  --gold-ramps: var(--drq-hi-down) 0 0 / 8px 8px repeat-x, var(--drq-lo-up) 0 100% / 8px 8px repeat-x, var(--drq-lo-left) 100% 0 / 8px 8px repeat-y;
+  --gold-ramps-pressed: var(--drq-lo-down) 0 0 / 8px 8px repeat-x, var(--drq-hi-up) 0 100% / 8px 8px repeat-x, var(--drq-hi-right) 0 0 / 8px 8px repeat-y;
+  --gold-raise: inset 2px 2px 0 var(--gold-hi), inset -2px -2px 0 var(--gold-lo);
+  --gold-sunk: inset 2px 2px 0 var(--gold-lo), inset -2px -2px 0 var(--gold-hi);
+  --charcoal: #2b2b2b; /* top box: lifts the artwork's near-black (#070808–#1b1913) off the background */
+  /* Two-tone edge for 4px boxes: a solid outer step plus a dithered inner step over gold, like the frame. */
+  --edge-layers:
+    linear-gradient(var(--bevel-hi), var(--bevel-hi)) 0 0 / 100% 2px no-repeat border-box,
+    linear-gradient(var(--bevel-hi), var(--bevel-hi)) 0 0 / 2px 100% no-repeat border-box,
+    linear-gradient(var(--bevel-lo), var(--bevel-lo)) 0 100% / 100% 2px no-repeat border-box,
+    linear-gradient(var(--bevel-lo), var(--bevel-lo)) 100% 0 / 2px 100% no-repeat border-box;
+  --edge-under:
+    var(--dt-lo-50) 0 100% / 8px 8px repeat-x border-box,
+    var(--dt-lo-50) 100% 0 / 8px 8px repeat-y border-box,
+    var(--dt-hi-50) 0 0 / 8px 8px border-box,
+    linear-gradient(var(--gold), var(--gold)) border-box;
+}
+
+/* ---------- 1. yellow buttons (report steps, camera, sign-in, See Sighting…) ---------- */
+.px-btn:not(.alt):not(.danger) {
+  background: var(--gold-ramps), var(--gold);
+  box-shadow: var(--px-border), var(--gold-raise);
+  transition: transform 150ms var(--ease-ui), background-color 100ms, box-shadow 150ms;
+}
+.px-btn:not(.alt):not(.danger):hover:not(:disabled) { background: var(--gold-ramps), var(--gold-hi); transform: translateY(-2px); }
+.px-btn:not(.alt):not(.danger):focus-visible:not(:disabled) { transform: translateY(-2px); }
+.px-btn:not(.alt):not(.danger):active:not(:disabled) {
+  background: var(--gold-ramps-pressed), var(--gold); box-shadow: var(--px-border), var(--gold-sunk); transform: translateY(2px);
+}
+.px-btn:not(.alt):not(.danger)[aria-pressed="true"], .px-btn:not(.alt):not(.danger).on {
+  background: var(--gold-ramps-pressed), var(--gold-hi); box-shadow: var(--px-border), var(--gold-sunk), inset 0 -3px 0 var(--accent); /* selected */
+}
+.px-btn:not(.alt):not(.danger):disabled { background: var(--gold); box-shadow: var(--px-border); opacity: 0.45; transform: none; }
+/* Busy (submitting): keep the moving stripes on top of the texture. */
+.px-btn:not(.alt):not(.danger).loading {
+  opacity: 1; background: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.15) 0 8px, transparent 8px 16px) 0 0 / 23px 23px, var(--gold-ramps), var(--gold);
+  animation: stripes 0.5s linear infinite;
+}
+@keyframes stripes { to { background-position: 23px 0, 0 0, 0 100%, 100% 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .px-btn:not(.alt):not(.danger), .px-btn:not(.alt):not(.danger):hover:not(:disabled), .px-btn:not(.alt):not(.danger):active:not(:disabled) { transform: none; transition: none; }
+}
+
+/* ---------- 2. title: lit top, gold face, shaded base, dithered steps between ---------- */
+.plaque h1 { text-shadow: none; }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .plaque h1 > span:not(.knightro-window) {
+    color: transparent; -webkit-text-fill-color: transparent;
+    background:
+      var(--dt-hi-50) 0 38% / 8px 4px repeat-x,
+      var(--dt-lo-50) 0 72% / 8px 4px repeat-x,
+      linear-gradient(var(--gold-hi) 0 40%, var(--gold) 40% 70%, var(--gold-lo) 70%);
+    -webkit-background-clip: text; background-clip: text;
+    /* Two crisp shade steps down-right (no blur, no outline), so letter shapes stay clean. */
+    filter: drop-shadow(1px 1px 0 #6e5300) drop-shadow(1px 1px 0 #141414);
+    padding: 0 2px 2px 0; /* room for the shade so it is never clipped */
+  }
+}
+
+/* ---------- 3 + 4. charcoal top box; frame, panels and menu share one edge ---------- */
+.plaque, .panel-shell, .navigation { border-color: transparent; }
+.plaque { background: var(--edge-layers), linear-gradient(var(--charcoal), var(--charcoal)) padding-box, var(--edge-under); }
+.panel-shell, .navigation { background: var(--edge-layers), linear-gradient(var(--screen), var(--screen)) padding-box, var(--edge-under); }
+/* Outer frame face: dithered light on the top/left faces, dithered shade on the bottom/right (face only, map untouched). */
+.frame::before {
+  --fw: calc(var(--frame) - 8px);
+  border-color: transparent;
+  background:
+    var(--dt-hi-50) 0 0 / 8px var(--fw) repeat-x border-box,
+    var(--dt-hi-50) 0 0 / var(--fw) 8px repeat-y border-box,
+    var(--dt-lo-50) 0 100% / 8px var(--fw) repeat-x border-box,
+    var(--dt-lo-50) 100% 0 / var(--fw) 8px repeat-y border-box,
+    linear-gradient(var(--gold), var(--gold)) 0 0 / 100% var(--fw) no-repeat border-box,
+    linear-gradient(var(--gold), var(--gold)) 0 100% / 100% var(--fw) no-repeat border-box,
+    linear-gradient(var(--gold), var(--gold)) 0 0 / var(--fw) 100% no-repeat border-box,
+    linear-gradient(var(--gold), var(--gold)) 100% 0 / var(--fw) 100% no-repeat border-box;
+}
+
+/* ---------- 5. close / back buttons: lift and press, never rotate ---------- */
+.x, #panel-close { transform: none; transition: transform 150ms var(--ease-ui), box-shadow 150ms var(--ease-ui), background-color 100ms; }
+.x { box-shadow: var(--grey-raise), 0 2px 0 var(--ink); }
+.x:hover, .x:focus-visible, #panel-close:hover, #panel-close:focus-visible { transform: translateY(-2px); box-shadow: var(--grey-raise), 0 4px 0 var(--ink); }
+.x:active, #panel-close:active { transform: translateY(1px); box-shadow: var(--grey-sunk); }
+@media (max-width: 720px) {
+  #panel-close { background: var(--gold-ramps), var(--gold); box-shadow: var(--gold-raise), 0 2px 0 var(--ink); }
+  #panel-close:hover, #panel-close:focus-visible { background: var(--gold-ramps), var(--gold-hi); box-shadow: var(--gold-raise), 0 4px 0 var(--ink); }
+  #panel-close:active { background: var(--gold-ramps-pressed), var(--gold); box-shadow: var(--gold-sunk); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .x, #panel-close { transition: none; }
+  .x:hover, .x:focus-visible, .x:active, #panel-close:hover, #panel-close:focus-visible, #panel-close:active { transform: none; } /* shading still shows the press */
+}

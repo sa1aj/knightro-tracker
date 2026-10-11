@@ -93,7 +93,9 @@
     selectedId: null,
     report: null,
   };
-  const newReport = () => ({ step: 'location', pin: null, gps: null, caption: '', photo:null, captureToken:null, captureExpiresAt:0, camera:null, submitting: false, error: '', result: null });
+  // Report flow: 'capture' (photo + note) → 'review' (current device location + submit) → 'done'.
+  // loc is this report's location request/result; pin is set only from a successful, fresh device fix.
+  const newReport = () => ({ step: 'capture', pin: null, loc: null, caption: '', photo:null, captureToken:null, captureExpiresAt:0, photoExpired:false, camera:null, submitting: false, error: '', result: null });
   const myPosts = new Set(); // ids this device just posted, so we don't announce them as "new"
   // This device's own saved reports, exactly as the server returned them. A poll that started before the post
   // (or a report still awaiting review, which public GET /sightings leaves out) can't make the new pin vanish.
@@ -145,18 +147,63 @@
 
   const markers = new Map();
   const bountyAreas = new Map();
-  let dropPin = null;
+  let reportPin = null; // the confirmed report location, shown on the map behind the report panel
 
   const adminOn = () => !!(state.admin && state.admin.allowed && state.admin.mode);
   const campusSightings = () => [...allSightings(), ...(adminOn() ? state.testSightings : [])]
     .filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC && mapUtils.contains(campus, {lat:s.lat, lng:s.long}))
     .sort((a, b) => b.timestamp - a.timestamp);
-  const activeEvents = () => [...state.events, ...(adminOn() ? state.testEvents : [])].filter((e) => e.endsAt > nowSec());
+  // Not yet ended (ongoing events stay); a listing without an end time counts as an instant at its start.
+  // A test event an admin made visible arrives in the public feed too; in Admin Mode the admin list's copy wins (one pin, not two).
+  const activeEvents = () => {
+    const tests = adminOn() ? state.testEvents : [];
+    const ids = new Set(tests.map((e) => e.eventId));
+    return [...state.events.filter((e) => !ids.has(e.eventId)), ...tests].filter((e) => mapUtils.eventEnd(e) > nowSec());
+  };
   const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
+  // This calendar week (Mon–Sun, America/New_York). Map pins and the event list both use it.
+  // Upcoming window: start of today → start of the day 7 days later (America/New_York). Map pins and the
+  // "next 7 days" list use exactly this rule; probability never decides eligibility (missing or 0 still count).
+  const upcomingWindow = () => mapUtils.dayWindow(nowSec(), 7);
+  const windowEvents = () => { const win = upcomingWindow(); return activeEvents().filter((e) => e.isTest || mapUtils.overlaps(e, win)); };
+  /** Estimated chance from the feed (0–1, or 0–100). null when the feed has no usable value. */
+  const probabilityPct = (e) => {
+    const p = e.probability;
+    if (p === null || p === undefined || p === '' || !Number.isFinite(Number(p))) return null;
+    const n = Number(p);
+    return Math.round(Math.max(0, Math.min(100, n <= 1 ? n * 100 : n)));
+  };
+  const mappable = (e) => Number.isFinite(e.lat) && Number.isFinite(e.long) && onCampus({ lat: e.lat, lng: e.long });
+  const campusOf = (e) => campuses.find((c) => mapUtils.contains(c, { lat: e.lat, lng: e.long }));
+  // Event medallions: visible art matches the Knightro medallion (~49 px); the 56 px box doubles as the touch target.
+  const EVENT_PIN = 56;
+  CONFIG.EVENT_FRAMES.forEach((src) => { const img = new Image(); img.src = src; img.decode?.().catch(() => {}); }); // preload: no flash on the first hover
+
+  // Event pin frames: idle 1; hover or selected plays 1 → 2 → 3 and holds 3. Only the art inside the marker changes.
+  const FRAME_MS = 80;
+  function eventFrame(marker, target) {
+    clearTimeout(marker.frameTimer);
+    const body = marker.getElement()?.querySelector('.kt-pin-body');
+    if (!body) return;
+    let frame = Number(body.dataset.frame) || 1;
+    if (target <= frame || fx.reducedMotion()) { body.dataset.frame = String(target); return; }
+    const step = () => {
+      frame += 1; body.dataset.frame = String(frame);
+      if (frame < target) marker.frameTimer = setTimeout(step, FRAME_MS);
+    };
+    marker.frameTimer = setTimeout(step, FRAME_MS);
+  }
+  const eventTarget = (marker) => (marker.hovered || marker.eventSelected ? 3 : 1);
   // The pin art's tip is its exact bottom-centre (see config.js), so that point is the anchor.
+  // Round Knightro medallions, centred on their map point. The hover art is framed identically (config.js), so
+  // the two images overlay exactly and only cross-fade.
   const [PIN_W, PIN_H] = CONFIG.PIN_SIZE;
-  const dropIcon = L.divIcon({ className: 'kt-drop', html: '<span class="drop-art"><img src="' + CONFIG.PIN_IMAGE + '" alt=""></span>', iconSize: [PIN_W, PIN_H], iconAnchor: [PIN_W / 2, PIN_H] });
+  const PIN_LIFT = 0; // medallions sit centred on the point, so the camera needs no upward offset
+  const pinArt = '<img class="pin-normal" src="' + CONFIG.PIN_IMAGE + '" alt=""><img class="pin-hover" src="' + CONFIG.PIN_HOVER_IMAGE + '" alt="">';
+  // The report location uses the teardrop pin: its tip (bottom-centre) is the exact chosen point.
+  const [PLACE_W, PLACE_H] = CONFIG.PLACE_PIN_SIZE;
+  const reportIcon = L.divIcon({ className: 'kt-drop report-pin', html: '<span class="drop-art"><img src="' + CONFIG.PLACE_PIN_IMAGE + '" alt=""></span>', iconSize: [PLACE_W, PLACE_H], iconAnchor: [PLACE_W / 2, PLACE_H] });
 
   function renderMarkers() {
     const sections = activeBounties().filter(b => b.campus === campus.id && Array.isArray(b.area));
@@ -171,7 +218,8 @@
     }
     const items = [
       ...campusSightings().map((s) => ({ ...s, kind: 'sighting', key: 's:' + s.sightingId })),
-      ...activeEvents().filter((e) => (e.isTest || (e.probability >= .8 && e.startsAt <= nowSec() + 1800)) && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
+      // Every likely event this week with a real venue on this campus. Events without coordinates stay list-only.
+      ...windowEvents().filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
         .map((e) => ({ ...e, kind:'event', key:'e:' + e.eventId })),
       ...activeBounties().filter(b => b.campus === campus.id).map(b => ({...b,kind:'bounty',key:'b:'+b.bountyId})),
     ];
@@ -182,19 +230,23 @@
       seen.add(id);
       let marker = markers.get(id);
       const multiple = group.items.length > 1;
-      const selected = group.items.some((item) => state.panel === 'detail' && item.sightingId === state.selectedId);
+      const eventSelected = group.items.some((item) => item.kind === 'event' && state.panel === 'event' && item.eventId === state.selectedEvent);
+      const selected = eventSelected || group.items.some((item) => state.panel === 'detail' && item.sightingId === state.selectedId);
       const signature = group.items.map((item) => item.key + ':' + (item.status || '')).join('|');
       if (!marker) {
         marker = L.marker([first.lat, first.long], { keyboard: true, riseOnHover: true })
           .on('click', () => {
             if (state.panel === 'report') return;
-            fx.replay(marker.getElement()?.querySelector('.pin-art'), 'tap'); // bounce the art, never the positioned marker
+            // A single event pin plays its frames on tap (details open immediately below); a stack pin opens a list instead.
+            if (marker.isEvent && marker.items.length === 1) eventFrame(marker, 3);
+            else fx.replay(marker.getElement()?.querySelector('.pin-art'), 'tap'); // bounce the art, never the positioned marker
             if (marker.items.length > 1) {
               state.stack = marker.items;
               openPanel('stack');
             } else openMapItem(marker.items[0]);
           })
-          .on('mouseover', () => sfx.play('hover'))
+          .on('mouseover', () => { sfx.play('hover'); if (marker.isEvent) { marker.hovered = true; eventFrame(marker, 3); } })
+          .on('mouseout', () => { if (marker.isEvent) { marker.hovered = false; eventFrame(marker, eventTarget(marker)); } })
           // Leaflet already turns Enter into a click on focused markers; Space should work too.
           .on('keypress', (e) => { if (e.originalEvent.key === ' ') { e.originalEvent.preventDefault(); marker.fire('click'); } })
           .addTo(map);
@@ -204,17 +256,24 @@
       marker.setLatLng([first.lat, first.long]);
       if (marker.signature !== signature) {
         const art = first.kind === 'sighting'
-          ? '<img src="' + CONFIG.PIN_IMAGE + '" alt="">'
+          ? pinArt
           : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
         const test = group.items.some((item) => item.isTest);
         const pending = first.kind === 'sighting' && !isPublic(first);
-        const size = first.kind === 'sighting' ? [PIN_W, PIN_H] : [66, 74];
+        const size = first.kind === 'sighting' ? [PIN_W, PIN_H] : first.kind === 'event' ? [EVENT_PIN, EVENT_PIN] : [66, 74];
         marker.setIcon(L.divIcon({
           className: 'kt-pin asset-pin ' + (first.kind === 'sighting' ? 'sighting-pin ' : '') + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (test ? 'test-pin ' : '') + (pending ? 'pending-pin ' : ''),
-          html: '<div class="kt-pin-body"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
-          iconSize: size, iconAnchor: first.kind === 'sighting' ? [PIN_W / 2, PIN_H] : [33, 72],
+          html: '<div class="kt-pin-body" data-frame="' + (eventSelected || marker.hovered ? 3 : 1) + '"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
+          // Medallions (sightings and events) are centred on their point; bounty tiles keep their bottom anchor.
+          iconSize: size, iconAnchor: first.kind === 'bounty' ? [33, 72] : [size[0] / 2, size[1] / 2],
         }));
         marker.signature = signature;
+        clearTimeout(marker.frameTimer); // the old element is gone; its pending frame step must not run
+      }
+      marker.isEvent = first.kind === 'event';
+      if (marker.isEvent && marker.eventSelected !== eventSelected) {
+        marker.eventSelected = eventSelected; // selecting another event or closing details updates the old pin here
+        eventFrame(marker, eventTarget(marker));
       }
       // Toggle selection on the existing element so hover/selected states can ease back smoothly.
       marker.getElement()?.classList.toggle('sel', selected);
@@ -225,32 +284,15 @@
     }
     for (const [id, marker] of markers) if (!seen.has(id)) { marker.remove(); markers.delete(id); }
     updatePinAges();
-    // Report pin
-    const picking = state.panel === 'report' && state.report?.step === 'location' && state.report.pin;
-    if (picking && !dropPin) {
-      dropPin = L.marker([state.report.pin.lat, state.report.pin.lng], { icon: dropIcon, draggable: true, zIndexOffset: 1000, title: 'Sighting location. Drag to adjust.' })
-        .on('dragstart', () => {
-          sfx.play('grab');
-          dropPin.getElement()?.classList.add('lifted');
-        })
-        .on('dragend', (e) => {
-          dropPin.getElement()?.classList.remove('lifted');
-          setPin(e.target.getLatLng());
-        })
-        .addTo(map);
-      fx.replay(dropPin.getElement(), 'bounce');
-    } else if (picking) {
-      dropPin.setLatLng([state.report.pin.lat, state.report.pin.lng]);
-    } else if (!picking && dropPin) {
-      dropPin.remove();
-      dropPin = null;
-    }
-    $('#map').classList.toggle('picking', state.panel === 'report' && state.report?.step === 'location');
+    // The report's device location, shown on the map behind the report panel (display only).
+    const r = state.report;
+    const showPin = state.panel === 'report' && r?.pin && r.step !== 'done';
+    if (showPin && !reportPin) {
+      reportPin = L.marker([r.pin.lat, r.pin.lng], { icon: reportIcon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+      fx.replay(reportPin.getElement(), 'bounce');
+    } else if (showPin) reportPin.setLatLng([r.pin.lat, r.pin.lng]);
+    else if (reportPin) { reportPin.remove(); reportPin = null; }
   }
-
-  map.on('click', (e) => {
-    if (state.panel === 'report' && state.report?.step === 'location') setPin(e.latlng);
-  });
 
   function updatePinAges() {
     for (const marker of markers.values()) {
@@ -286,10 +328,7 @@
     applyCampusLimits(true);
     $('#campus-select').value = campus.id;
     $('#map').setAttribute('aria-label', 'Map of UCF ' + campus.name + ' with sightings and events');
-    if (state.report && !mapUtils.contains(campus, state.report.pin)) {
-      state.report.pin = {...campus.center}; state.report.gps = null;
-    }
-    render();
+    render(); // a report's confirmed location is never changed by switching campus
   }
   // Pins keep their proportion to the map: full size at street level (zoom 17+), shrinking to 55% zoomed out.
   // CSS scales only the inner art from its anchor (refinements.css); clustering uses the same scale.
@@ -309,12 +348,6 @@
   $('#campus-select').append(...campuses.map((c) => h('option', {value:c.id}, c.name)));
   $('#campus-select').addEventListener('change', (e) => switchCampus(e.target.value));
 
-  function setPin(latlng) {
-    state.report.pin = { lat: latlng.lat, lng: latlng.lng };
-    sfx.play('place');
-    render();
-    fx.replay(dropPin?.getElement(), 'bounce');
-  }
 
   /**
    * Screen point at the middle of the map area nothing covers: below the top controls, above the open sheet or
@@ -422,6 +455,8 @@
 
   function openPanel(name, backTo = null) {
     setMenu(false);
+    // The admin panel opens only for accounts the server lists as admins, with Admin Mode on (the server also checks every call).
+    if (name === 'admin' && !adminOn()) return;
     if (CONFIG.ACCOUNTS && ['report','reports'].includes(name) && !state.user) { state.auth.after = name; name = 'account'; }
     if (name === 'report' && state.panel !== 'report' && state.nextSightingAt > nowSec()) {
       fx.toast('TAKE A BREATHER', 'Your next report unlocks in ' + Math.ceil(state.nextSightingAt - nowSec()) + ' seconds.', 'info');
@@ -433,8 +468,7 @@
     state.report = name === 'report' ? newReport() : null;
     state.panel = name;
     state.backTo = backTo;
-    render();
-    if (name === 'report') locate();
+    render(); // the report asks for GPS only when the user picks Use My Location
     if (name === 'events') loadEvents();
     if (name === 'leaderboard') loadLeaderboard();
     if (name === 'reports') loadReports();
@@ -446,12 +480,13 @@
     if (!state.panel) return;
     sfx.play('close');
     state.report?.camera?.dispose();
+    locateId++; // a pending GPS answer belongs to the closed report
     state.panel = null;
     state.report = null;
     render();
   }
   function openDetail(id, backTo = null) {
-    if (state.panel === 'report') return; // pins aren't selectable while placing the report pin
+    if (state.panel === 'report') return; // pins aren't selectable while a report is open
     sfx.play(state.panel ? 'switch' : 'open');
     state.selectedId = id;
     state.panel = 'detail';
@@ -461,54 +496,62 @@
 
   $('#panel-close').addEventListener('click', closePanel);
   $('#panel-back').addEventListener('click', () => state.backTo && openPanel(state.backTo));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (menuOpen) setMenu(false); else if (state.panel) closePanel(); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (menuOpen) setMenu(false); else if (state.panel) closePanel();
+  });
   document.querySelectorAll('[data-panel]').forEach((b) => b.addEventListener('click', () => openPanel(b.dataset.panel)));
 
   // ---------- report flow ----------
+  // Sightings use the reporter's current device location, requested only inside this flow (no background tracking).
+  // Every request gets an id; a newer request, closing the report, or a submission makes older answers irrelevant.
   let locateId = 0;
-  const GPS_MSG = {
+  const LOCATION_MAX_AGE = 120;      // seconds; an older fix is refreshed before submitting
+  const LOCATION_MAX_ERROR = 200;    // metres; a fix less precise than this cannot pin a sighting to a building
+  const LOCATION_MSG = {
     locating: 'Finding your location…',
-    ok: 'GPS placed the pin. Drag it or tap the map if it is off.',
-    denied: 'Location permission was denied. Drag the pin or tap the map where you saw Knightro.',
-    failed: "Couldn't get your location. Drag the pin or tap the map where you saw Knightro.",
-    offcampus: "You don't appear to be on a supported UCF campus. Drag the pin or tap the map where you saw Knightro.",
-    unsupported: 'Location needs HTTPS (or localhost). Drag the pin or tap the map where you saw Knightro.',
+    denied: 'Location access is required to submit a sighting. Allow location for this site in your browser (iPhone: Settings › Privacy › Location Services › Safari Websites; Android: tap the lock icon by the address › Permissions › Location), then tap Retry location.',
+    timeout: "Getting your location took too long. Make sure Location Services are on, then retry.",
+    failed: "Couldn't get your location. Make sure Location Services are on, then retry.",
+    inaccurate: 'Your location is too imprecise to place the sighting (about ±{m} m). Move near a window or outdoors, then retry.',
+    offcampus: "You don't appear to be on a UCF campus. Sightings can only be reported from Main, Rosen, or Downtown.",
+    unsupported: 'This browser cannot share your location here (location needs HTTPS). Open the tracker in your phone browser to report.',
   };
+  /** Ask the device for its current position for this report. Keeps the photo and note untouched. */
   function locate() {
     const r = state.report;
     if (!r) return;
     const id = ++locateId;
-    const fallback = (gps) => {
-      if (id !== locateId || state.report !== r) return;
-      const c = map.getCenter();
-      r.gps = gps;
-      r.pin = r.pin || (onCampus({ lat: c.lat, lng: c.lng }) ? { lat: c.lat, lng: c.lng } : { ...campus.center });
-      sfx.play('place');
-      render();
-    };
-    if (!navigator.geolocation || !window.isSecureContext) return fallback('unsupported');
-    r.gps = 'locating';
+    const previous = r.loc;
+    r.loc = { status: 'locating', refreshing: previous?.status === 'ok' };
+    r.pin = null; // never submit an old or substituted point while a new one is pending
     render();
+    const done = (loc) => {
+      if (id !== locateId || state.report !== r) return; // superseded or closed
+      r.loc = loc;
+      r.pin = loc.status === 'ok' ? { lat: loc.lat, lng: loc.lng } : null;
+      if (loc.status === 'ok') sfx.play('place');
+      if (state.panel === 'report') render();
+    };
+    if (!navigator.geolocation || !window.isSecureContext) return done({ status: 'unsupported' });
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        if (id !== locateId || state.report !== r) return;
-        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        if (!onCampus(p)) return fallback('offcampus');
-        r.gps = 'ok';
-        r.pin = p;
-        sfx.play('place');
-        render();
-        focusOn(p.lat, p.lng, 18);
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude }, accuracy = Math.round(pos.coords.accuracy || 0);
+        if (accuracy > LOCATION_MAX_ERROR) return done({ status: 'inaccurate', accuracy });
+        if (!onCampus(p)) return done({ status: 'offcampus' });
+        done({ status: 'ok', ...p, accuracy, at: nowSec() });
       },
-      (err) => fallback(err.code === 1 ? 'denied' : 'failed'),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      (err) => done({ status: err.code === 1 ? 'denied' : err.code === 3 ? 'timeout' : 'failed' }),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   }
+  const locationFresh = (r) => r?.loc?.status === 'ok' && nowSec() - r.loc.at <= LOCATION_MAX_AGE;
 
   async function submitReport() {
     const r = state.report;
     if (!r || r.submitting || !onCampus(r.pin) || (CONFIG.ACCOUNTS && !r.photo)) return;
-    if (CONFIG.ACCOUNTS && r.captureExpiresAt <= nowSec()) { r.camera?.expire(); updateCooldown(); return; }
+    if (CONFIG.ACCOUNTS && r.captureExpiresAt <= nowSec()) { expirePhoto(r); return; }
+    if (!locationFresh(r)) { locate(); return; } // stale: refresh and show the new fix; the user then submits it
     r.submitting = true;
     r.error = '';
     sfx.play('click');
@@ -543,68 +586,21 @@
     }
   }
 
+  /** A captured photo is only valid for its capture token's lifetime; after that it must be retaken. */
+  function expirePhoto(r) {
+    if (!r.photo) return;
+    if (r.camera) { r.camera.expire(); return; } // still on the photo step: the camera handles it
+    r.photo = null; r.captureToken = null; r.captureExpiresAt = 0; r.requestId = null; r.photoExpired = true;
+    if (state.report === r && state.panel === 'report') render();
+  }
+  function toPhotoStep(r) { sfx.play('switch'); r.step = 'capture'; r.error = ''; render(); }
+
   function reportView(r) {
-    const idx = r.step === 'location' ? 0 : 1;
+    const idx = r.step === 'review' ? 1 : 0;
     const steps = h('ol', { class: 'steps' },
-      [['location', 'LOCATION'], ['details', CONFIG.ACCOUNTS ? 'PHOTO PROOF' : 'DETAILS']].map(([k, label], i) =>
-        h('li', { class: i === idx ? 'on' : i < idx ? 'done' : '', 'aria-current': i === idx ? 'step' : null }, `${i + 1}. ${label}`)
-      )
-    );
-
-    if (r.step === 'location') {
-      const pinOk = onCampus(r.pin);
-      const warn = ['denied', 'failed', 'offcampus', 'unsupported'].includes(r.gps);
-      return [
-        steps,
-        h('p', { class: 'small' }, 'Where did you see Knightro? Confirm the gold pin on the map. Drag it, or tap the map to move it.'),
-        r.gps && h('div', { class: `msg${warn ? ' warn' : ''}${r.gps === 'locating' ? ' scanning' : ''}` }, GPS_MSG[r.gps]),
-        r.pin && h('dl', { class: 'kv' }, h('dt', {}, 'PIN'), h('dd', {}, pinOk ? placeName(r.pin.lat, r.pin.lng) : 'Off campus. Move the pin onto Main, Rosen, or Downtown campus.')),
-        h('label', {class:'field'}, h('span', {class:'label'}, 'Jump to a building (optional)'), h('select', {id:'report-building', onchange:event => {
-          const b = buildings.find(b => b.id === event.target.value); if (b) { const c = campuses.find(c => c.id === b.campus); if (c && c.id !== campus.id) switchCampus(c.id); setPin({lat:b.lat,lng:b.long}); focusOn(b.lat,b.long); }
-        }}, h('option', {value:''}, 'Choose a campus building…'), ...buildings.filter(b => b.campus === campus.id).map(b => h('option', {value:b.id}, b.name)))),
-        h('div', { class: 'actions' },
-          h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => { sfx.play('click'); locate(); }, disabled: r.gps === 'locating' }, 'USE MY LOCATION'),
-          r.pin && h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(r.pin.lat, r.pin.lng) }, 'SHOW PIN')
-        ),
-        h('div', { class: 'panel-foot' },
-          h('span'),
-          h('button', {
-            type: 'button',
-            class: 'px-btn',
-            disabled: !pinOk,
-            onclick: () => { sfx.play('switch'); r.step = 'details'; render(); },
-          }, 'CONFIRM LOCATION')
-        ),
-      ];
-    }
-
-    if (r.step === 'details' && !CONFIG.ACCOUNTS) {
-      // Static GitHub Pages copy: the shared sightings service stores location + caption only.
-      const counter = h('span', { class: 'muted small counter' }, `${r.caption.length}/${CONFIG.CAPTION_MAX}`);
-      const ta = h('textarea', { id: 'rep-caption', maxlength: CONFIG.CAPTION_MAX, placeholder: 'Knightro is near the Student Union' });
-      ta.value = r.caption;
-      ta.addEventListener('input', () => { r.caption = ta.value; counter.textContent = `${ta.value.length}/${CONFIG.CAPTION_MAX}`; sfx.play('type'); });
-      return [
-        steps,
-        h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
-        h('p', { class: 'msg warn' }, 'Static demo: your sighting posts its location and caption to the shared map. Photo proof, accounts and points need the Knightro app server.'),
-        h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
-        r.error && errorBox(r.error),
-        h('div', { class: 'panel-foot' },
-          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
-          h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting, onclick: submitReport }, r.submitting ? 'POSTING…' : 'POST SIGHTING')),
-      ];
-    }
-
-    if (r.step === 'details') {
-      if (!r.camera) r.camera = window.KT.camera.create(capture => {
-        if (state.report !== r) return;
-        r.photo = capture?.photo || null; r.captureToken = capture?.captureToken || null;
-        r.requestId = null;
-        r.captureExpiresAt = capture?.captureExpiresAt || 0; r.error = '';
-        updateCooldown();
-      });
-      r.camera.element.inert = r.submitting;
+      [CONFIG.ACCOUNTS ? 'PHOTO' : 'DETAILS', 'LOCATION & SUBMIT'].map((label, i) =>
+        h('li', { class: i === idx ? 'on' : i < idx ? 'done' : '', 'aria-current': i === idx ? 'step' : null }, `${i + 1}. ${label}`)));
+    const captionField = () => {
       const counter = h('span', { class: 'muted small counter' }, `${r.caption.length}/${CONFIG.CAPTION_MAX}`);
       const ta = h('textarea', { id: 'rep-caption', maxlength: CONFIG.CAPTION_MAX, placeholder: 'Knightro is near the Student Union' });
       ta.value = r.caption;
@@ -614,17 +610,71 @@
         counter.classList.toggle('near', ta.value.length > CONFIG.CAPTION_MAX - 20);
         sfx.play('type');
       });
+      return h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter);
+    };
+    const needLocation = () => !locationFresh(r) && r.loc?.status !== 'locating';
+
+    // 1. Photo (or just the note on the static demo).
+    if (r.step === 'capture') {
+      if (CONFIG.ACCOUNTS && !r.photo && !r.camera) r.camera = window.KT.camera.create(capture => {
+        if (state.report !== r) return;
+        r.photo = capture?.photo || null; r.captureToken = capture?.captureToken || null;
+        r.requestId = null; r.photoExpired = false;
+        r.captureExpiresAt = capture?.captureExpiresAt || 0; r.error = '';
+        if (r.photo && needLocation()) locate(); // ask for location right after the photo (it renders, enabling NEXT)
+        else render(); // enables NEXT
+      });
+      if (r.camera) r.camera.element.inert = r.submitting;
+      const next = () => {
+        sfx.play('switch');
+        r.camera?.dispose(); r.camera = null; // release the camera as soon as the photo step is left
+        r.error = ''; r.step = 'review';
+        if (needLocation()) locate(); else render();
+      };
       return [
         steps,
-        h('dl', { class: 'kv' }, h('dt', {}, 'WHERE'), h('dd', {}, placeName(r.pin.lat, r.pin.lng))),
-        r.camera.element,
-        h('div', { class: 'field' }, h('label', { class: 'label', for: 'rep-caption' }, 'What is he doing? (optional)'), ta, counter),
-        h('p', { class: 'muted small' }, 'Live photos post immediately: 1 point, or 2 for your first daily bounty claim. Pins last 20 minutes.'),
+        !CONFIG.ACCOUNTS && h('p', { class: 'msg warn' }, 'Static demo: your sighting posts its location and caption to the shared map. Photo proof, accounts and points need the Knightro app server.'),
+        CONFIG.ACCOUNTS && (r.camera ? r.camera.element : h('figure', { class: 'report-photo' },
+          h('img', { src: r.photo, alt: 'Your sighting photo' }),
+          h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => { sfx.play('click'); r.photo = null; r.captureToken = null; render(); } }, 'RETAKE PHOTO'))),
+        r.photoExpired && !r.photo && h('p', { class: 'msg warn' }, 'Your photo expired. Take a new one to continue.'),
+        captionField(),
+        h('p', { class: 'muted small' }, 'Your sighting is placed at your current location, so report from where you see him.' + (CONFIG.ACCOUNTS ? ' Submit within 2 minutes of taking the photo.' : '')),
+        h('div', { class: 'panel-foot' },
+          h('button', { type: 'button', class: 'px-btn alt', onclick: closePanel }, 'CANCEL'),
+          h('button', { id: 'rep-next', type: 'button', class: 'px-btn', disabled: CONFIG.ACCOUNTS && !r.photo, onclick: next }, 'NEXT')),
+      ];
+    }
+
+    // 2. Location & submit: the device's current location (no manual placement), the photo and note, then submit.
+    if (r.step === 'review') {
+      const loc = r.loc || { status: 'locating' };
+      const ok = loc.status === 'ok', stale = ok && !locationFresh(r);
+      const locBox = ok
+        ? h('div', { class: 'loc-summary', role: 'status' },
+          h('span', { class: 'label' }, 'Your location'),
+          h('strong', {}, placeName(loc.lat, loc.lng)),
+          h('span', { class: 'small muted' }, ...numText(loc.lat.toFixed(5) + ', ' + loc.lng.toFixed(5) + ' · ±' + fmt(loc.accuracy) + ' m')),
+          stale && h('span', { class: 'small' }, 'This location is over 2 minutes old. It will refresh when you submit.'))
+        : loc.status === 'locating'
+          ? h('div', { class: 'msg scanning', role: 'status' }, loc.refreshing ? 'Updating your location…' : LOCATION_MSG.locating)
+          : h('div', { class: 'msg warn loc-problem', role: 'alert' },
+            h('span', {}, ...numText(LOCATION_MSG[loc.status].replace('{m}', fmt(loc.accuracy)))),
+            loc.status !== 'unsupported' && h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => { sfx.play('click'); locate(); } }, 'RETRY LOCATION'));
+      return [
+        steps,
+        CONFIG.ACCOUNTS && (r.photo
+          ? h('figure', { class: 'report-photo review' }, h('img', { src: r.photo, alt: 'Your sighting photo' }),
+            h('figcaption', { class: 'small muted' }, 'Photo valid for ', h('b', { class: 'num', 'data-expires': r.captureExpiresAt }, countdown(r.captureExpiresAt))))
+          : h('div', { class: 'msg warn' }, 'Your photo expired before it was submitted. Retake it to continue.')),
+        locBox,
+        r.caption && h('p', { class: 'quote' }, r.caption),
         r.error && errorBox(r.error),
         h('div', { class: 'panel-foot' },
-          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => { sfx.play('switch'); r.camera?.dispose(); r.camera = null; r.photo = null; r.captureToken = null; r.step = 'location'; r.error = ''; render(); } }, 'BACK'),
-          h('button', { id:'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`, disabled: r.submitting || !r.photo || state.nextSightingAt > nowSec(), onclick: submitReport }, r.submitting ? 'POSTING…' : 'SUBMIT PHOTO')
-        ),
+          h('button', { type: 'button', class: 'px-btn alt', disabled: r.submitting, onclick: () => toPhotoStep(r) }, CONFIG.ACCOUNTS && !r.photo ? 'RETAKE PHOTO' : 'BACK'),
+          h('button', { id: 'rep-submit', type: 'button', class: `px-btn${r.submitting ? ' loading' : ''}`,
+            disabled: r.submitting || (CONFIG.ACCOUNTS && !r.photo) || state.nextSightingAt > nowSec() || !ok, onclick: submitReport },
+          r.submitting ? 'POSTING…' : 'SUBMIT SIGHTING')),
       ];
     }
 
@@ -659,7 +709,7 @@
     if (home && home.id !== campus.id) switchCampus(home.id);
     sfx.play('switch');
     render();
-    focusOn(s.lat, s.long, 18, { pinHeight: PIN_H, done: () => spotlight(id) });
+    focusOn(s.lat, s.long, 18, { pinHeight: PIN_LIFT, done: () => spotlight(id) });
   }
   /** Bring a sighting's marker to the front, pulse it, and give it keyboard focus. */
   function spotlight(id) {
@@ -699,7 +749,7 @@
     }
     return campusSightings().map((s) => {
       const photo = photoFor(s);
-      return h('button', { type: 'button', class: 'feed-item', onclick: () => { openDetail(s.sightingId, 'recent'); focusOn(s.lat, s.long, 17, { pinHeight: PIN_H, done: () => spotlight(s.sightingId) }); } },
+      return h('button', { type: 'button', class: 'feed-item', onclick: () => { openDetail(s.sightingId, 'recent'); focusOn(s.lat, s.long, 17, { pinHeight: PIN_LIFT, done: () => spotlight(s.sightingId) }); } },
         h('img', { src: photo.src, alt: '', class: photo.pixel ? 'pixel' : null }),
         h('span', { class: 'feed-text' },
           h('strong', {}, placeName(s.lat, s.long)),
@@ -734,7 +784,7 @@
       h('h3', {}, placeName(s.lat, s.long).toUpperCase()),
       h('dl', { class: 'kv' }, h('dt', {}, 'SEEN'), h('dd', {}, ...numText(`${clock(s)} (${timeAgo(s)})`))),
       s.caption && h('p', { class: 'quote' }, s.caption),
-      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(s.lat, s.long, 17, { pinHeight: PIN_H, done: () => spotlight(s.sightingId) }) }, 'SHOW ON MAP')),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(s.lat, s.long, 17, { pinHeight: PIN_LIFT, done: () => spotlight(s.sightingId) }) }, 'SHOW ON MAP')),
     ];
   }
 
@@ -767,8 +817,8 @@
     if (label) setNum(label, remaining ? 'Next sighting available in ' + remaining + ' seconds.' : 'You can report a sighting now.');
     const submit = $('#rep-submit');
     if (submit && !state.report?.submitting) {
-      submit.disabled = remaining > 0 || (CONFIG.ACCOUNTS && (!state.report?.photo || state.report.captureExpiresAt <= nowSec()));
-      setNum(submit, remaining ? 'WAIT ' + remaining + 's' : CONFIG.ACCOUNTS ? 'SUBMIT PHOTO' : 'POST SIGHTING');
+      submit.disabled = remaining > 0 || !onCampus(state.report?.pin) || (CONFIG.ACCOUNTS && (!state.report?.photo || state.report.captureExpiresAt <= nowSec()));
+      setNum(submit, remaining ? 'WAIT ' + remaining + 's' : 'SUBMIT SIGHTING');
     }
   }
   function accountView() {
@@ -886,7 +936,7 @@
     eventsInFlight = true;
     try {
       const data = await api.getEvents();
-      state.events = (data.events || []).filter((e) => e.eventId && typeof e.title === 'string' && Number.isFinite(e.startsAt) && Number.isFinite(e.endsAt) && e.endsAt > nowSec())
+      state.events = (data.events || []).filter((e) => e.eventId && typeof e.title === 'string' && Number.isFinite(e.startsAt) && mapUtils.eventEnd(e) > nowSec())
         .map(resolveEvent).sort((a,b) => a.startsAt - b.startsAt);
       state.eventsGeneratedAt = data.generatedAt;
       state.eventsError = '';
@@ -910,17 +960,38 @@
     }},
       h('strong',{},event.title),
       h('span',{class:'small'},...numText(eventTime(event.startsAt) + ' ET')),
-      h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · No map pin')),
+      h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · Location not mapped')),
+      event.isTest ? h('span',{class:'prob-tag unknown'},'TEST EVENT · no points') : probabilityTag(event),
       h('span',{class:'small hint-reason'},event.reason || 'Possible appearance'));
+  }
+  /** Estimated-likelihood chip. Always worded as an estimate, never as a confirmed appearance. */
+  function probabilityTag(event) {
+    const pct = probabilityPct(event);
+    return h('span', { class: 'prob-tag' + (pct === null ? ' unknown' : ''), title: 'Estimated chance Knightro appears (not confirmed)' },
+      pct === null ? 'Likelihood unknown' : h('span', { class: 'num' }, pct + '%'), pct === null ? '' : ' est. chance');
   }
   function eventsView() {
     if (!state.eventsLoaded) return [h('p',{},'Loading campus events…')];
+    // The "next 7 days" group uses the map's exact rule (so the two agree); later feed events are listed too, so nothing
+    // the feed provides is hidden. Events with no mappable venue cannot belong to a campus map, so they are listed
+    // (with their location status) whichever campus is selected.
+    const win = upcomingWindow();
+    const day = (t) => new Date(t * 1000).toLocaleDateString([], { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric' });
+    const onThisCampus = (e) => !mappable(e) || campusOf(e)?.id === campus.id;
+    const all = activeEvents().sort((a, b) => a.startsAt - b.startsAt);
+    const inWindow = (e) => e.isTest || mapUtils.overlaps(e, win);
+    const soon = all.filter((e) => inWindow(e) && onThisCampus(e)), later = all.filter((e) => !inWindow(e) && onThisCampus(e));
+    const elsewhere = all.length - soon.length - later.length;
     return [
-      h('p',{class:'small'},'Only events with evidence of a possible Knightro appearance. Pins appear within 30 minutes of the start. These are building-level hints, not confirmed sightings.'),
+      h('p',{class:'small'},'Events with evidence of a possible Knightro appearance on ' + campus.name + '. Chances are estimates from the listing, not confirmed sightings.'),
       state.eventsGeneratedAt && h('p',{class:'muted small'},...numText('Last synced ' + eventTime(state.eventsGeneratedAt) + ' ET')),
       state.eventsError && errorBox(state.eventsError, loadEvents),
-      ...activeEvents().map(eventRow),
-      !activeEvents().length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances in the current feed.'),
+      h('p',{class:'label week-label'},...numText('Next 7 days · on the map · ' + day(win.start) + ' – ' + day(win.end - 1))),
+      ...soon.map(eventRow),
+      !soon.length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances on this campus in the next 7 days.'),
+      later.length > 0 && h('p',{class:'label week-label'},'Later · pins appear 7 days ahead'),
+      ...later.map(eventRow),
+      elsewhere > 0 && h('p',{class:'muted small'},...numText(elsewhere + (elsewhere === 1 ? ' more event' : ' more events') + ' on other campuses. Switch campus in the menu to see ' + (elsewhere === 1 ? 'it.' : 'them.'))),
       h('button',{type:'button',class:'px-btn alt',onclick:loadEvents},'REFRESH EVENTS'),
     ];
   }
@@ -930,10 +1001,12 @@
     let safeUrl = null;
     try { const url = new URL(event.url); if (url.protocol === 'https:') safeUrl = url.href; } catch { /* no external link */ }
     return [
-      event.isTest && h('p',{class:'msg warn'},'TEST EVENT · only visible to admins in Admin Mode'),
-      h('div',{class:'event-hero'},CONFIG.EVENT_FRAMES.map((src,i) => h('img',{src,alt:'',class:'event-frame frame-' + i}))),
+      event.isTest && h('p',{class:'msg warn'},event.visible ? 'TEST EVENT · visible to everyone for testing · not a real event · no points' : 'TEST EVENT · only visible to admins in Admin Mode'),
+      // Static artwork in the details popup: the selected-state (third) frame. Map pins keep their own 3-frame animation.
+      h('div',{class:'event-hero'},h('img',{src:CONFIG.EVENT_FRAMES[2],alt:'',class:'event-hero-art'})),
       h('h3',{},event.title), h('p',{},event.location || 'Location to be announced'),
-      h('p',{class:'msg'},event.reason + '. Knightro attendance is unconfirmed.'),
+      h('p',{class:'msg'},(event.reason || 'Possible appearance') + '. Knightro attendance is unconfirmed.'),
+      !event.isTest && h('p',{},probabilityTag(event)), // a test event's fixed odds are not an estimate
       h('dl',{class:'kv'},h('dt',{},'START'),h('dd',{},...numText(eventTime(event.startsAt) + ' ET')),h('dt',{},'END'),h('dd',{},...numText(eventTime(event.endsAt) + ' ET'))),
       Array.isArray(event.hosts) && h('p',{class:'muted'},'Hosted by ' + event.hosts.join(', ')),
       safeUrl && h('a',{class:'px-btn',href:safeUrl,target:'_blank',rel:'noopener noreferrer'},'VIEW ON KNIGHTCONNECT'),
@@ -1087,6 +1160,8 @@
       h('button',{type:'button',class:'px-btn alt',onclick:loadReports},'REFRESH REVIEW STATUS')];
   }
 
+  let lastDayStart = upcomingWindow().start;
+
   // ---------- render ----------
   let lastViewKey = '';
   let viewShownAt = 0;
@@ -1133,6 +1208,8 @@
       }
       if (focusedId && body.querySelector(`#${focusedId}`)) body.querySelector(`#${focusedId}`).focus();
     }
+
+    document.body.classList.toggle('report-open', state.panel === 'report');
 
     // Report button doubles as cancel while reporting.
     const reporting = state.panel === 'report';
@@ -1224,7 +1301,7 @@
     sfx.play('whoosh');
     fx.replay(recenterButton, 'spin');
   }
-  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession,
+  const admin = window.KT.admin.create({ h, api, fx, sfx, state, map, render, closePanel, focusOn, refreshSession, loadEvents,
     buildings: () => buildings, campus: () => campus });
   $('#admin-mode-toggle').addEventListener('click', () => admin.setMode(!adminOn()));
   const soundBtn = $('#btn-sound');
@@ -1260,13 +1337,15 @@
   setTimeout(() => document.body.classList.remove('booting'), 2200);
 
   setInterval(() => {
-    if (state.report?.photo && !state.report.submitting && state.report.captureExpiresAt <= nowSec()) state.report.camera?.expire();
+    if (state.report?.photo && !state.report.submitting && state.report.captureExpiresAt <= nowSec()) expirePhoto(state.report);
     const active = state.sightings.filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC);
     for (const [id, s] of ownPosts) if (ageSec(s) >= CONFIG.ACTIVE_WINDOW_SEC) ownPosts.delete(id);
-    const expiredEvents = state.events.some((e) => e.endsAt <= nowSec());
+    const expiredEvents = state.events.some((e) => mapUtils.eventEnd(e) <= nowSec());
+    const today = upcomingWindow().start;
+    if (today !== lastDayStart) { lastDayStart = today; loadEvents(); render({ panel: state.panel === 'events' }); } // a new local day: the window moves
     const expiredBounties = state.bounties.some(b => b.expiresAt <= nowSec());
     if (active.length !== state.sightings.length || expiredEvents || expiredBounties) {
-      state.sightings = active; state.events = state.events.filter((e) => e.endsAt > nowSec()); state.bounties = activeBounties();
+      state.sightings = active; state.events = state.events.filter((e) => mapUtils.eventEnd(e) > nowSec()); state.bounties = activeBounties();
       render({panel: !['account','report','admin'].includes(state.panel)});
     } else updatePinAges();
     updateCooldown();
@@ -1279,5 +1358,6 @@
   loadEvents();
   loadGame();
   if (CONFIG.ACCOUNTS) setInterval(() => { if (!document.hidden) loadGame(); }, 15000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadGame(); window.KT.sense.presence(state.user); } });
+  // Back after leaving the app open (e.g. overnight): fresh events, and the 7-day window recomputed from today.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadGame(); loadEvents(); window.KT.sense.presence(state.user); } });
 })();

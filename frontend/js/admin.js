@@ -11,7 +11,7 @@
     const localTime = (d) => pad(d.getHours()) + ':' + pad(d.getMinutes());
     function blankEvent() {
       const start = new Date(Date.now() + 15 * 60000);
-      return { title: '', description: '', date: localDate(start), time: localTime(start), hours: '1', building: '' };
+      return { title: '', description: '', date: localDate(start), time: localTime(start), hours: '1', building: '', visible: false };
     }
     const ui = {
       loading: {}, msg: {},
@@ -84,6 +84,8 @@
     }
     async function loadPanel() {
       await Promise.all([loadTestData(), loadReview(), loadLog()]);
+      // Visible test events also arrive in the public events feed; refresh it so markers and details match.
+      if (ctx.loadEvents) await ctx.loadEvents();
       if (state.panel === 'admin') ctx.render();
     }
     async function afterChange() {
@@ -159,10 +161,10 @@
       const start = new Date(e.date + 'T' + e.time);
       if (!e.date || !e.time || Number.isNaN(start.getTime())) return (ui.msg.events = { ok: false, text: 'Choose a date and time.' }), repaint();
       const startsAt = Math.floor(start.getTime() / 1000);
-      const body = { title: e.title.trim(), description: e.description.trim(), startsAt, endsAt: startsAt + Number(e.hours) * 3600, ...location(e.building) };
+      const body = { title: e.title.trim(), description: e.description.trim(), startsAt, endsAt: startsAt + Number(e.hours) * 3600, ...location(e.building), visible: e.visible === true };
       if (ui.editing) body.eventId = ui.editing;
       const editing = !!ui.editing;
-      const result = await run('events', () => api.admin.saveTestEvent(body), editing ? 'Test event updated.' : 'Test event created. It is visible only in Admin Mode.');
+      const result = await run('events', () => api.admin.saveTestEvent(body), (editing ? 'Test event updated. ' : 'Test event created. ') + (body.visible ? 'Visible to other users.' : 'Visible only to admins in Admin Mode.'));
       if (!result) return;
       ui.event = blankEvent(); ui.editing = null;
       await afterChange();
@@ -172,8 +174,19 @@
       const start = new Date(event.startsAt * 1000);
       ui.editing = event.eventId;
       ui.event = { title: event.title, description: event.description || '', date: localDate(start), time: localTime(start),
-        hours: String(Math.max(1, Math.min(48, Math.round((event.endsAt - event.startsAt) / 3600)))), building: event.buildingId || '' };
+        hours: String(Math.max(1, Math.min(48, Math.round((event.endsAt - event.startsAt) / 3600)))), building: event.buildingId || '', visible: event.visible === true };
       ui.msg.events = null;
+      repaint();
+    }
+    /** Flip one saved test event's visibility. Saves the whole event so nothing else changes. */
+    async function setEventVisible(event, visible) {
+      const keys = ['eventId', 'title', 'description', 'startsAt', 'endsAt', 'lat', 'long'];
+      const body = Object.fromEntries(keys.filter((k) => event[k] !== undefined).map((k) => [k, event[k]]));
+      body.visible = visible;
+      const result = await run('events', () => api.admin.saveTestEvent(body), visible ? '"' + event.title + '" is now visible to other users.' : '"' + event.title + '" is now hidden from other users.');
+      if (!result) return;
+      if (ui.editing === event.eventId) ui.event.visible = visible;
+      await afterChange();
       repaint();
     }
     async function deleteEvent(eventId) {
@@ -311,12 +324,12 @@
                 button('CANCEL', () => { ui.pending = null; repaint(); }, { cls: 'alt', section: 'points' })))),
           message('points')),
 
-        section('TEST EVENTS', 'Fake events for testing. Marked TEST and visible only to admins in Admin Mode.',
+        section('TEST EVENTS', 'Fake events for testing. Always marked TEST and never award points. Hidden from other users unless you turn on visibility.',
           ...state.testEvents.map((e) => h('div', { class: 'admin-item' },
-            h('span', {}, h('b', { class: 'test-tag' }, 'TEST'), ' ', h('strong', {}, e.title), h('small', {}, when(e.startsAt) + ' · ' + e.location)),
+            h('span', {}, h('b', { class: 'test-tag' }, 'TEST'), ' ', h('b', { class: 'vis-tag' + (e.visible ? ' on' : '') }, e.visible ? 'VISIBLE TO USERS' : 'ADMINS ONLY'), ' ', h('strong', {}, e.title), h('small', {}, when(e.startsAt) + ' · ' + (e.location || 'Map pin'))),
             ui.deleteEventId === e.eventId
               ? h('span', { class: 'actions' }, button('DELETE', () => deleteEvent(e.eventId), { cls: 'danger sm', section: 'events' }), button('KEEP', () => { ui.deleteEventId = null; repaint(); }, { cls: 'alt sm' }))
-              : h('span', { class: 'actions' }, button('EDIT', () => editEvent(e), { cls: 'alt sm' }), button('DELETE', () => { ui.deleteEventId = e.eventId; repaint(); }, { cls: 'alt sm' })))),
+              : h('span', { class: 'actions' }, button(e.visible ? 'HIDE' : 'SHOW', () => setEventVisible(e, !e.visible), { cls: 'alt sm', section: 'events', busyLabel: '…' }), button('EDIT', () => editEvent(e), { cls: 'alt sm' }), button('DELETE', () => { ui.deleteEventId = e.eventId; repaint(); }, { cls: 'alt sm' })))),
           !state.testEvents.length && h('p', { class: 'small muted' }, 'No upcoming test events.'),
           h('div', { class: 'admin-card' },
             h('strong', { class: 'small' }, ui.editing ? 'EDIT TEST EVENT' : 'NEW TEST EVENT'),
@@ -327,6 +340,12 @@
               field('Time', 'admin-ev-time', input('admin-ev-time', { type: 'time' }, ui.event.time, (v) => (ui.event.time = v))),
               field('Hours', 'admin-ev-hours', input('admin-ev-hours', { type: 'number', min: 1, max: 48, step: 1 }, ui.event.hours, (v) => (ui.event.hours = v)))),
             field('Map location', 'admin-ev-where', buildingSelect('admin-ev-where', ui.event.building, (v) => (ui.event.building = v), 'Current map center')),
+            h('button', { type: 'button', class: 'switch-row', role: 'switch', 'aria-checked': String(!!ui.event.visible), disabled: ui.loading.events,
+              onclick: () => { ui.event.visible = !ui.event.visible; repaint(); } },
+              h('span', {}, h('strong', {}, 'Visible to other users'), h('small', {}, ui.event.visible
+                ? 'Regular users will see this on the map and in Events, labeled TEST EVENT. No points.'
+                : 'Off: only admins in Admin Mode can see this event.')),
+              h('span', { class: 'switch', 'aria-hidden': 'true' })),
             h('div', { class: 'actions' },
               button(ui.editing ? 'SAVE CHANGES' : 'CREATE TEST EVENT', saveEvent, { section: 'events', busyLabel: 'SAVING…' }),
               ui.editing && button('CANCEL EDIT', () => { ui.editing = null; ui.event = blankEvent(); repaint(); }, { cls: 'alt' }))),

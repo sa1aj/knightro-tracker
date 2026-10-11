@@ -349,3 +349,25 @@ input[type="number"], #account-code { font-family: var(--f-num); font-weight: 70
 .victory.not-posted h3 { color: var(--warn); }
 .msg.err.error-box .msg-ico { width: 26px; height: 26px; flex: none; object-fit: contain; image-rendering: auto; }
 .msg.err.error-box > span { flex: 1 1 150px; }
+
+/* ------------------------------------------------------------------ Knightro medallion map pins */
+/* Round pins centred on their point: scale, hover lift, tap pulse and the highlight ring all work from the centre.
+   Normal and hover art are stacked in the same box and cross-fade. */
+.sighting-pin .kt-pin-body, .sighting-pin .pin-art, .kt-drop .drop-art { transform-origin: 50% 50%; }
+.sighting-pin .pin-art img, .kt-drop .drop-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; transition: opacity 140ms ease; }
+.kt-drop .drop-art { position: relative; }
+.kt-drop .drop-art img { transform-origin: 50% 50%; }
+.pin-hover { opacity: 0; }
+.asset-pin:hover .pin-hover, .asset-pin:focus-visible .pin-hover, .kt-drop.lifted .pin-hover { opacity: 1; }
+.asset-pin:hover .pin-normal, .asset-pin:focus-visible .pin-normal, .kt-drop.lifted .pin-normal { opacity: 0; }
+.asset-pin.sighting-pin:hover .kt-pin-body, .asset-pin.sighting-pin:focus-visible .kt-pin-body { transform: scale(1.12); }
+.asset-pin.sighting-pin.sel .kt-pin-body { transform: scale(1.08); }
+.kt-drop.lifted .drop-art img { transform: none; }
+.kt-drop.lifted .drop-art { transform: translateY(-10px) scale(1.15); filter: drop-shadow(3px 10px 0 rgba(0, 0, 0, 0.35)); }
+.kt-drop .drop-art { transition: transform 0.15s var(--pop), filter 0.15s; }
+.sighting-pin .age { margin-top: 3px; }
+.asset-pin.sighting-pin.spotlight .kt-pin-body::after {
+  top: 0; bottom: 0; left: 0; right: 0; width: auto; height: auto; margin: 0; border-radius: 50%;
+}
+.asset-pin.sighting-pin.spotlight .kt-pin-body::after { animation-name: spotRingRound; }
+@keyframes spotRingRound { from { transform: scale(0.95); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }

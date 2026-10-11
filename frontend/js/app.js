@@ -155,8 +155,12 @@
   const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
   // The pin art's tip is its exact bottom-centre (see config.js), so that point is the anchor.
+  // Round Knightro medallions, centred on their map point. The hover art is framed identically (config.js), so
+  // the two images overlay exactly and only cross-fade.
   const [PIN_W, PIN_H] = CONFIG.PIN_SIZE;
-  const dropIcon = L.divIcon({ className: 'kt-drop', html: '<span class="drop-art"><img src="' + CONFIG.PIN_IMAGE + '" alt=""></span>', iconSize: [PIN_W, PIN_H], iconAnchor: [PIN_W / 2, PIN_H] });
+  const PIN_LIFT = 0; // medallions sit centred on the point, so the camera needs no upward offset
+  const pinArt = '<img class="pin-normal" src="' + CONFIG.PIN_IMAGE + '" alt=""><img class="pin-hover" src="' + CONFIG.PIN_HOVER_IMAGE + '" alt="">';
+  const dropIcon = L.divIcon({ className: 'kt-drop', html: '<span class="drop-art">' + pinArt + '</span>', iconSize: [PIN_W, PIN_H], iconAnchor: [PIN_W / 2, PIN_H / 2] });
 
   function renderMarkers() {
     const sections = activeBounties().filter(b => b.campus === campus.id && Array.isArray(b.area));
@@ -204,7 +208,7 @@
       marker.setLatLng([first.lat, first.long]);
       if (marker.signature !== signature) {
         const art = first.kind === 'sighting'
-          ? '<img src="' + CONFIG.PIN_IMAGE + '" alt="">'
+          ? pinArt
           : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
         const test = group.items.some((item) => item.isTest);
         const pending = first.kind === 'sighting' && !isPublic(first);
@@ -212,7 +216,7 @@
         marker.setIcon(L.divIcon({
           className: 'kt-pin asset-pin ' + (first.kind === 'sighting' ? 'sighting-pin ' : '') + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (test ? 'test-pin ' : '') + (pending ? 'pending-pin ' : ''),
           html: '<div class="kt-pin-body"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
-          iconSize: size, iconAnchor: first.kind === 'sighting' ? [PIN_W / 2, PIN_H] : [33, 72],
+          iconSize: size, iconAnchor: first.kind === 'sighting' ? [PIN_W / 2, PIN_H / 2] : [33, 72],
         }));
         marker.signature = signature;
       }
@@ -659,7 +663,7 @@
     if (home && home.id !== campus.id) switchCampus(home.id);
     sfx.play('switch');
     render();
-    focusOn(s.lat, s.long, 18, { pinHeight: PIN_H, done: () => spotlight(id) });
+    focusOn(s.lat, s.long, 18, { pinHeight: PIN_LIFT, done: () => spotlight(id) });
   }
   /** Bring a sighting's marker to the front, pulse it, and give it keyboard focus. */
   function spotlight(id) {
@@ -699,7 +703,7 @@
     }
     return campusSightings().map((s) => {
       const photo = photoFor(s);
-      return h('button', { type: 'button', class: 'feed-item', onclick: () => { openDetail(s.sightingId, 'recent'); focusOn(s.lat, s.long, 17, { pinHeight: PIN_H, done: () => spotlight(s.sightingId) }); } },
+      return h('button', { type: 'button', class: 'feed-item', onclick: () => { openDetail(s.sightingId, 'recent'); focusOn(s.lat, s.long, 17, { pinHeight: PIN_LIFT, done: () => spotlight(s.sightingId) }); } },
         h('img', { src: photo.src, alt: '', class: photo.pixel ? 'pixel' : null }),
         h('span', { class: 'feed-text' },
           h('strong', {}, placeName(s.lat, s.long)),
@@ -734,7 +738,7 @@
       h('h3', {}, placeName(s.lat, s.long).toUpperCase()),
       h('dl', { class: 'kv' }, h('dt', {}, 'SEEN'), h('dd', {}, ...numText(`${clock(s)} (${timeAgo(s)})`))),
       s.caption && h('p', { class: 'quote' }, s.caption),
-      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(s.lat, s.long, 17, { pinHeight: PIN_H, done: () => spotlight(s.sightingId) }) }, 'SHOW ON MAP')),
+      h('div', { class: 'actions' }, h('button', { type: 'button', class: 'px-btn alt sm', onclick: () => focusOn(s.lat, s.long, 17, { pinHeight: PIN_LIFT, done: () => spotlight(s.sightingId) }) }, 'SHOW ON MAP')),
     ];
   }
 

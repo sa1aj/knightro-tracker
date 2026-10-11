@@ -38,9 +38,11 @@ window.KT = window.KT || {};
     POLL_MS: 12000, ACTIVE_WINDOW_SEC: 1200, FRESH_SEC: 300,
     COOLDOWN_SEC: 120, CAPTION_MAX: 200,
     CAMPUSES_URL: 'data/campuses.json', BUILDINGS_URL: 'data/buildings.json', STOCK_PHOTOS: [],
-    // Supplied Knightro map pin (assets/photos/images/knightro-pin.svg). Its viewBox is framed so the tip is the
-    // exact bottom-centre of the image, which is where the marker anchors to the map coordinate.
-    PIN_IMAGE: 'assets/photos/images/knightro-pin.svg', PIN_SIZE: [46, 58],
+    // Knightro medallion map pin. Its viewBox is a tight square around the round art, so the marker centres it
+    // on the map coordinate.
+    PIN_IMAGE: 'assets/photos/images/knightro-pin-map.svg', PIN_SIZE: [50, 50],
+    // Shown while a map pin is hovered (or keyboard-focused / being dragged). Same square frame as PIN_IMAGE.
+    PIN_HOVER_IMAGE: 'assets/photos/images/knightro-pin-map-hover.svg',
     EVENT_FRAMES: ['assets/photos/images/eventframe1-03.svg', 'assets/photos/images/eventframe2-05.svg', 'assets/photos/images/eventframe3-04.svg'],
     // Top-bar Knightro turnaround (8 supplied frames, in filename order). Adjust speed here.
     KNIGHTRO_FRAMES: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => 'assets/photos/knightro%20animation/knightroanim-0' + n + '.svg'),

@@ -62,6 +62,31 @@
         .map(e => util.eventHint(e, buildings)).filter(Boolean);
       return { ...feed, events, filter: 'likely-knightro' };
     },
+    /**
+     * The calendar week (Monday 00:00 → next Monday 00:00) containing `now`, in UCF's time zone, as Unix seconds.
+     * Midnights are resolved in that zone, so weeks crossing a daylight-saving change are 167 or 169 hours long.
+     */
+    weekRange(now, timeZone = 'America/New_York') {
+      const fmt = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' });
+      const parts = (t) => Object.fromEntries(fmt.formatToParts(new Date(t * 1000)).map((p) => [p.type, p.value]));
+      // Unix time of local midnight on (y, m, d); Date.UTC rolls day overflow into the next month/year.
+      const midnight = (y, m, d) => {
+        const target = Date.UTC(y, m - 1, d) / 1000;
+        let t = target;
+        for (let i = 0; i < 3; i++) {
+          const q = parts(t);
+          t -= Date.UTC(+q.year, +q.month - 1, +q.day, +q.hour, +q.minute, +q.second) / 1000 - target;
+        }
+        return t;
+      };
+      const p = parts(now);
+      const sinceMonday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(p.weekday);
+      return { start: midnight(+p.year, +p.month, +p.day - sinceMonday), end: midnight(+p.year, +p.month, +p.day - sinceMonday + 7) };
+    },
+    /** True when an event's scheduled time overlaps the range (multi-day events included; zero-length = an instant). */
+    overlaps(event, range) {
+      return event.startsAt < range.end && Math.max(event.endsAt, event.startsAt + 1) > range.start;
+    },
     cluster(items, project, radius = 48) {
       const groups = [];
       for (const item of items) {

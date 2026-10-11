@@ -449,3 +449,54 @@ body.placing .leaflet-bottom.leaflet-right { top: auto; bottom: calc(var(--frame
 /* A keyboard-open sheet rises over the top row; keep it above the corner buttons so nothing overlaps its header. */
 body.keyboard-open .panel-shell { z-index: 840; }
 .report-pin .drop-art { transform-origin: 50% 100%; }
+
+/* ==========================================================================================
+   Event medallions, raised Report/bounty art, and the orange accent
+   ========================================================================================== */
+/* ---------- event pins: three frames, swapped discretely (no cross-fade, no float) ---------- */
+.event-pin .kt-pin-body { animation: none; transform-origin: 50% 50%; }
+.event-pin .event-frame { animation: none; opacity: 1; visibility: hidden; object-fit: contain; image-rendering: auto; }
+.event-pin [data-frame="1"] .frame-0, .event-pin [data-frame="2"] .frame-1, .event-pin [data-frame="3"] .frame-2 { visibility: visible; }
+.event-pin .frame-1, .event-pin .frame-2 { transform: translateX(1.4%); } /* frames 2–3 sit 1.4% left in their files */
+.event-pin:hover .kt-pin-body, .event-pin.sel .kt-pin-body { transform: scale(1.08); }
+
+/* ---------- shared orange accent: the mute button's cross-out ---------- */
+:root { --accent: var(--bad); }
+#btn-sound.muted::after { background: var(--accent); }
+.badge, .stack-count { background: var(--accent); color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.badge { top: -11px; right: -11px; padding: 4px 6px 3px; }
+.stack-count { border: 0; right: -10px; top: -6px; }
+/* Restrained extra uses: the current menu item's edge and the ticker's typing cursor. */
+.nav-item[aria-current] { box-shadow: var(--raise), inset 4px 0 0 var(--accent); }
+.ticker .cursor { background: var(--accent); }
+
+/* ---------- Report Sighting: raised, lit from the top-left ---------- */
+/* Dithered highlight along the top, shade along the bottom and right; the middle (where the label sits) stays clean. */
+.dock .report-btn {
+  background:
+    var(--drs-hi-down) 0 0 / 8px 16px repeat-x,
+    var(--drs-lo-up) 0 100% / 8px 16px repeat-x,
+    var(--drs-lo-left) 100% 0 / 16px 8px repeat-y,
+    var(--gold);
+  text-shadow: none; font-weight: 700;
+}
+.dock .report-btn:hover { background-color: var(--gold-hi); }
+.dock .report-btn:active { /* pressed: light and shade swap, like a key pushed in */
+  background-image: var(--drs-lo-down), var(--drs-hi-up), var(--drs-hi-right);
+  background-position: 0 0, 0 100%, 0 0;
+}
+.dock .report-btn.active { background: var(--screen); }
+.report-btn::after { background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent); } /* softer shine over the label */
+
+/* ---------- 2× bounty tile: same light direction, clear numerals ---------- */
+.bounty-art {
+  font: 700 25px/1 var(--f-num); letter-spacing: -0.02em; padding-top: 1px;
+  background:
+    var(--drs-hi-down) 0 0 / 8px 16px repeat-x,
+    var(--drs-hi-right) 0 0 / 16px 8px repeat-y,
+    var(--drs-lo-up) 0 100% / 8px 16px repeat-x,
+    var(--drs-lo-left) 100% 0 / 16px 8px repeat-y,
+    var(--gold);
+}
+.asset-pin:hover .bounty-art { background-color: var(--gold-hi); }
+.bounty-multiplier { font: 700 20px var(--f-num); letter-spacing: -0.02em; }

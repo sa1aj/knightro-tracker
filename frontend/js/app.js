@@ -156,6 +156,30 @@
   const activeEvents = () => [...state.events, ...(adminOn() ? state.testEvents : [])].filter((e) => e.endsAt > nowSec());
   const activeBounties = () => state.bounties.filter(b => b.startsAt <= nowSec() && b.expiresAt > nowSec());
   const eventArt = () => CONFIG.EVENT_FRAMES.map((src, i) => '<img class="event-frame frame-' + i + '" src="' + src + '" alt="">').join('');
+  // This calendar week (Mon–Sun, America/New_York). Map pins and the event list both use it.
+  const thisWeek = () => mapUtils.weekRange(nowSec());
+  const weekEvents = () => { const week = thisWeek(); return activeEvents().filter((e) => e.isTest || mapUtils.overlaps(e, week)); };
+  const mappable = (e) => Number.isFinite(e.lat) && Number.isFinite(e.long) && onCampus({ lat: e.lat, lng: e.long });
+  const campusOf = (e) => campuses.find((c) => mapUtils.contains(c, { lat: e.lat, lng: e.long }));
+  // Event medallions: visible art matches the Knightro medallion (~49 px); the 56 px box doubles as the touch target.
+  const EVENT_PIN = 56;
+  CONFIG.EVENT_FRAMES.forEach((src) => { const img = new Image(); img.src = src; img.decode?.().catch(() => {}); }); // preload: no flash on the first hover
+
+  // Event pin frames: idle 1; hover or selected plays 1 → 2 → 3 and holds 3. Only the art inside the marker changes.
+  const FRAME_MS = 80;
+  function eventFrame(marker, target) {
+    clearTimeout(marker.frameTimer);
+    const body = marker.getElement()?.querySelector('.kt-pin-body');
+    if (!body) return;
+    let frame = Number(body.dataset.frame) || 1;
+    if (target <= frame || fx.reducedMotion()) { body.dataset.frame = String(target); return; }
+    const step = () => {
+      frame += 1; body.dataset.frame = String(frame);
+      if (frame < target) marker.frameTimer = setTimeout(step, FRAME_MS);
+    };
+    marker.frameTimer = setTimeout(step, FRAME_MS);
+  }
+  const eventTarget = (marker) => (marker.hovered || marker.eventSelected ? 3 : 1);
   // The pin art's tip is its exact bottom-centre (see config.js), so that point is the anchor.
   // Round Knightro medallions, centred on their map point. The hover art is framed identically (config.js), so
   // the two images overlay exactly and only cross-fade.
@@ -179,7 +203,8 @@
     }
     const items = [
       ...campusSightings().map((s) => ({ ...s, kind: 'sighting', key: 's:' + s.sightingId })),
-      ...activeEvents().filter((e) => (e.isTest || (e.probability >= .8 && e.startsAt <= nowSec() + 1800)) && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
+      // Every likely event this week with a real venue on this campus. Events without coordinates stay list-only.
+      ...weekEvents().filter((e) => (e.isTest || e.probability >= .8) && Number.isFinite(e.lat) && Number.isFinite(e.long) && mapUtils.contains(campus, {lat:e.lat,lng:e.long}))
         .map((e) => ({ ...e, kind:'event', key:'e:' + e.eventId })),
       ...activeBounties().filter(b => b.campus === campus.id).map(b => ({...b,kind:'bounty',key:'b:'+b.bountyId})),
     ];
@@ -190,19 +215,23 @@
       seen.add(id);
       let marker = markers.get(id);
       const multiple = group.items.length > 1;
-      const selected = group.items.some((item) => state.panel === 'detail' && item.sightingId === state.selectedId);
+      const eventSelected = group.items.some((item) => item.kind === 'event' && state.panel === 'event' && item.eventId === state.selectedEvent);
+      const selected = eventSelected || group.items.some((item) => state.panel === 'detail' && item.sightingId === state.selectedId);
       const signature = group.items.map((item) => item.key + ':' + (item.status || '')).join('|');
       if (!marker) {
         marker = L.marker([first.lat, first.long], { keyboard: true, riseOnHover: true })
           .on('click', () => {
             if (state.panel === 'report') return;
-            fx.replay(marker.getElement()?.querySelector('.pin-art'), 'tap'); // bounce the art, never the positioned marker
+            // A single event pin plays its frames on tap (details open immediately below); a stack pin opens a list instead.
+            if (marker.isEvent && marker.items.length === 1) eventFrame(marker, 3);
+            else fx.replay(marker.getElement()?.querySelector('.pin-art'), 'tap'); // bounce the art, never the positioned marker
             if (marker.items.length > 1) {
               state.stack = marker.items;
               openPanel('stack');
             } else openMapItem(marker.items[0]);
           })
-          .on('mouseover', () => sfx.play('hover'))
+          .on('mouseover', () => { sfx.play('hover'); if (marker.isEvent) { marker.hovered = true; eventFrame(marker, 3); } })
+          .on('mouseout', () => { if (marker.isEvent) { marker.hovered = false; eventFrame(marker, eventTarget(marker)); } })
           // Leaflet already turns Enter into a click on focused markers; Space should work too.
           .on('keypress', (e) => { if (e.originalEvent.key === ' ') { e.originalEvent.preventDefault(); marker.fire('click'); } })
           .addTo(map);
@@ -216,13 +245,20 @@
           : first.kind === 'bounty' ? '<strong class="bounty-art">2×</strong>' : eventArt();
         const test = group.items.some((item) => item.isTest);
         const pending = first.kind === 'sighting' && !isPublic(first);
-        const size = first.kind === 'sighting' ? [PIN_W, PIN_H] : [66, 74];
+        const size = first.kind === 'sighting' ? [PIN_W, PIN_H] : first.kind === 'event' ? [EVENT_PIN, EVENT_PIN] : [66, 74];
         marker.setIcon(L.divIcon({
           className: 'kt-pin asset-pin ' + (first.kind === 'sighting' ? 'sighting-pin ' : '') + (first.kind === 'event' ? 'event-pin ' : '') + (multiple ? 'stack-pin ' : '') + (test ? 'test-pin ' : '') + (pending ? 'pending-pin ' : ''),
-          html: '<div class="kt-pin-body"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
-          iconSize: size, iconAnchor: first.kind === 'sighting' ? [PIN_W / 2, PIN_H / 2] : [33, 72],
+          html: '<div class="kt-pin-body" data-frame="' + (eventSelected || marker.hovered ? 3 : 1) + '"><span class="pin-art">' + art + '</span>' + (multiple ? '<b class="stack-count">' + group.items.length + '</b>' : '') + '<span class="age"></span></div>',
+          // Medallions (sightings and events) are centred on their point; bounty tiles keep their bottom anchor.
+          iconSize: size, iconAnchor: first.kind === 'bounty' ? [33, 72] : [size[0] / 2, size[1] / 2],
         }));
         marker.signature = signature;
+        clearTimeout(marker.frameTimer); // the old element is gone; its pending frame step must not run
+      }
+      marker.isEvent = first.kind === 'event';
+      if (marker.isEvent && marker.eventSelected !== eventSelected) {
+        marker.eventSelected = eventSelected; // selecting another event or closing details updates the old pin here
+        eventFrame(marker, eventTarget(marker));
       }
       // Toggle selection on the existing element so hover/selected states can ease back smoothly.
       marker.getElement()?.classList.toggle('sel', selected);
@@ -981,17 +1017,26 @@
     }},
       h('strong',{},event.title),
       h('span',{class:'small'},...numText(eventTime(event.startsAt) + ' ET')),
-      h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · No map pin')),
+      h('span',{class:'muted small'},(event.buildingName || event.location || 'Location to be announced') + (mapped ? '' : ' · Location not mapped')),
       h('span',{class:'small hint-reason'},event.reason || 'Possible appearance'));
   }
   function eventsView() {
     if (!state.eventsLoaded) return [h('p',{},'Loading campus events…')];
+    // Same rule as the map: this week's events on the selected campus. Events with no mappable venue cannot belong to
+    // a campus map, so they are listed (with their location status) whichever campus is selected.
+    const week = thisWeek();
+    const day = (t) => new Date(t * 1000).toLocaleDateString([], { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric' });
+    const all = weekEvents().sort((a, b) => a.startsAt - b.startsAt);
+    const here = all.filter((e) => !mappable(e) || campusOf(e)?.id === campus.id);
+    const elsewhere = all.length - here.length;
     return [
-      h('p',{class:'small'},'Only events with evidence of a possible Knightro appearance. Pins appear within 30 minutes of the start. These are building-level hints, not confirmed sightings.'),
+      h('p',{class:'small'},'Events with evidence of a possible Knightro appearance on ' + campus.name + ' this week. Pins are building-level hints, not confirmed sightings.'),
+      h('p',{class:'label week-label'},...numText('This week · ' + day(week.start) + ' – ' + day(week.end - 1))),
       state.eventsGeneratedAt && h('p',{class:'muted small'},...numText('Last synced ' + eventTime(state.eventsGeneratedAt) + ' ET')),
       state.eventsError && errorBox(state.eventsError, loadEvents),
-      ...activeEvents().map(eventRow),
-      !activeEvents().length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances in the current feed.'),
+      ...here.map(eventRow),
+      !here.length && h('p',{class:'msg'},state.eventsAvailable === false ? 'The event feed has not been published yet. Check back soon.' : 'No likely Knightro appearances on this campus this week.'),
+      elsewhere > 0 && h('p',{class:'muted small'},...numText(elsewhere + (elsewhere === 1 ? ' more event' : ' more events') + ' this week on other campuses. Switch campus in the menu to see ' + (elsewhere === 1 ? 'it.' : 'them.'))),
       h('button',{type:'button',class:'px-btn alt',onclick:loadEvents},'REFRESH EVENTS'),
     ];
   }
@@ -1157,6 +1202,8 @@
       !state.reports.length && h('p',{class:'msg'},state.reportsLoaded ? 'No photo reports yet. Spot Knightro and take a photo.' : 'Loading your reports…'),
       h('button',{type:'button',class:'px-btn alt',onclick:loadReports},'REFRESH REVIEW STATUS')];
   }
+
+  let lastWeekStart = thisWeek().start;
 
   // ---------- render ----------
   let lastViewKey = '';
@@ -1348,6 +1395,8 @@
     const active = state.sightings.filter((s) => ageSec(s) < CONFIG.ACTIVE_WINDOW_SEC);
     for (const [id, s] of ownPosts) if (ageSec(s) >= CONFIG.ACTIVE_WINDOW_SEC) ownPosts.delete(id);
     const expiredEvents = state.events.some((e) => e.endsAt <= nowSec());
+    const week = thisWeek().start;
+    if (week !== lastWeekStart) { lastWeekStart = week; render({ panel: state.panel === 'events' }); } // a new calendar week: new pins/list
     const expiredBounties = state.bounties.some(b => b.expiresAt <= nowSec());
     if (active.length !== state.sightings.length || expiredEvents || expiredBounties) {
       state.sightings = active; state.events = state.events.filter((e) => e.endsAt > nowSec()); state.bounties = activeBounties();

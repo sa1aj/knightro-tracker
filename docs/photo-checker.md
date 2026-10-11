@@ -5,11 +5,11 @@
 The Supabase API validates the signed-in account, campus location, fresh capture token, upload size, and cooldown. It strips metadata and stores an immutable JPEG in the private bucket, then calls the private CPU checker on the teal Vercel project. Classification runs outside the database transaction. Browser-supplied scores or decisions are ignored; retries classify the already stored photo.
 
 - Score at least **0.64576655626297**: publish immediately and award eligible points.
-- Lower score: HTTP **422**, ask the user to retake with Knightro clearly visible. No sighting or points are created.
+- Lower score: save a private rejected report with its photo, model score, cutoff, and timestamp, then return HTTP **422** asking the user to retake with Knightro clearly visible. No public sighting or points are created.
 - Checker unavailable: HTTP **503**, ask the user to retry. No sighting is created.
-- Failed checks do not consume the capture token or start the posting cooldown. Captures still expire after two minutes, and request rate limits still apply. Uncommitted uploads are removed by scheduled cleanup. Retaking resets the request ID; retries use the same immutable photo.
+- Failed checks do not consume the capture token or start the posting cooldown. Captures still expire after two minutes, and request rate limits still apply. Rejected photos are retained privately for 24 hours; uncommitted uploads from outages are removed by scheduled cleanup. Retaking resets the request ID; retries use the same immutable photo and do not create duplicate history entries.
 
-There is no admin approval queue or approval endpoint. Admins can view and remove reports. Previously queued non-matches are retained as private rejected history with zero points. Public pins expire 20 minutes after posting and photos expire after 24 hours.
+There is no admin approval queue or approval endpoint. Admins can view and remove reports. **Review Sightings → Show photos** filters all photos, accepted photos, or rejected/removed photos, up to 100 per filter from the last day. Scores are model scores, not calibrated probabilities. Photos are accessible only through the authenticated API; rejected photos require their owner or an administrator. Previously queued non-matches are also retained as private rejected history with zero points. Earlier failed attempts that were never saved cannot be recovered. Public pins expire 20 minutes after posting and photos expire after 24 hours.
 
 ## Hosting and private access
 

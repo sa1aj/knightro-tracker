@@ -114,7 +114,7 @@
       deleteTestEvent: (eventId) => app('/admin/test-events/delete', {eventId, confirm:true}),
       testSightings: () => app('/admin/test-sightings'),
       createTestSighting: (body) => app('/admin/test-sightings', body),
-      sightings: () => app('/admin/sightings'),
+      sightings: (status = 'all') => app('/admin/sightings?status=' + encodeURIComponent(status)),
       removeSighting: (sightingId, reason) => app('/admin/sightings/remove', {sightingId, reason, confirm:true}),
       clearTestData: () => app('/admin/test-data/clear', {confirm:true}),
       log: () => app('/admin/log'),

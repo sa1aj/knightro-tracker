@@ -70,7 +70,14 @@ Deno.serve(async req=> {
       if(!response.ok) throw new APIError(404,'Photo not found.');
       return new Response(response.body,{headers:{'Content-Type':'image/jpeg','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
     }
-    if(req.method==='GET') return json(await rpc('GET '+route,user.id,route==='admin/users'?{q:(url.searchParams.get('q')||'').slice(0,60)}:{}));
+    if(req.method==='GET') {
+      const filters:Record<string,any>=route==='admin/users'?{q:(url.searchParams.get('q')||'').slice(0,60)}:{};
+      if(route==='admin/sightings') {
+        filters.status=url.searchParams.get('status')||'all';
+        if(!['all','accepted','rejected'].includes(filters.status)) throw new APIError(400,'Choose a valid photo history filter.');
+      }
+      return json(await rpc('GET '+route,user.id,filters));
+    }
     if(route==='camera-session') {
       const token=randomToken(),result=await rpc('POST camera-session',user.id,{hash:await hash(token)});
       return json({...result,captureToken:token});
@@ -101,7 +108,12 @@ Deno.serve(async req=> {
       // classification fields are never forwarded. Only a detected match can post.
       const photoCheck=await checkPhoto(checkedPhoto,settings);
       if(photoCheck.status==='unavailable') throw new APIError(503,'The photo checker is temporarily unavailable. Your sighting was not posted. Please retry.');
-      if(photoCheck.status!=='detected') throw new APIError(422,'Knightro was not detected in this photo. Retake it with Knightro clearly in frame.');
+      if(photoCheck.status!=='detected') {
+        // Keep the normalized immutable photo and score for private admin history.
+        // This records zero points and never consumes the capture token or cooldown.
+        await rpc('photo/reject',user.id,{...payload,photoCheck});
+        throw new APIError(422,'Knightro was not detected in this photo. Retake it with Knightro clearly in frame.');
+      }
       return json(await rpc('POST sightings',user.id,{...payload,photoCheck}),201);
     }
     if(['presence','admin/test-sightings','admin/test-events'].includes(route)) location(data);

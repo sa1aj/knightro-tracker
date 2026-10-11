@@ -18,7 +18,7 @@
       query: '', users: null, selected: null, amount: '', reason: '', pending: null,
       event: blankEvent(), editing: null, deleteEventId: null,
       testCaption: '', testBuilding: '',
-      sightings: null, removeId: null, removeReason: '',
+      sightings: null, sightingsFilter: 'all', reviewRequest: 0, removeId: null, removeReason: '',
       log: null, clearConfirm: false,
     };
     state.testSightings = [];
@@ -70,8 +70,13 @@
       ctx.render({ panel: !['report', 'account', 'admin'].includes(state.panel) });
     }
     async function loadReview() {
-      try { ui.sightings = (await api.admin.sightings()).sightings; }
-      catch (error) { ui.msg.review = { ok: false, text: error.message }; ui.sightings = ui.sightings || []; }
+      const request = ++ui.reviewRequest;
+      try {
+        const result = await api.admin.sightings(ui.sightingsFilter);
+        if (request === ui.reviewRequest) { ui.sightings = result.sightings; ui.msg.review = null; }
+      } catch (error) {
+        if (request === ui.reviewRequest) { ui.msg.review = { ok: false, text: error.message }; ui.sightings = ui.sightings || []; }
+      }
     }
     async function loadLog() {
       try { ui.log = (await api.admin.log()).entries; }
@@ -235,6 +240,19 @@
     function section(title, note, ...children) {
       return h('section', { class: 'admin-sec' }, h('h3', { class: 'admin-sec-title' }, title), note && h('p', { class: 'small muted' }, note), ...children);
     }
+    function photoHistoryFilter() {
+      const select = h('select', { id: 'admin-photo-filter' },
+        h('option', { value: 'all' }, 'All photos'),
+        h('option', { value: 'accepted' }, 'Accepted photos'),
+        h('option', { value: 'rejected' }, 'Rejected / removed photos'));
+      select.value = ui.sightingsFilter;
+      select.addEventListener('change', async () => {
+        ui.sightingsFilter = select.value; ui.sightings = null; ui.msg.review = null;
+        repaint(); await loadReview(); repaint();
+      });
+      return select;
+    }
+    const rejectedByChecker = s => s.status === 'rejected' && ['not-detected', 'review'].includes(s.photoCheck?.status);
     function describe(entry) {
       const d = entry.detail || {};
       switch (entry.action) {
@@ -320,21 +338,22 @@
           button('CREATE TEST SIGHTING', createTestSighting, { section: 'tests', busyLabel: 'CREATING…' }),
           message('tests')),
 
-        section('REVIEW SIGHTINGS', 'Photos are checked automatically before posting. View reports from the last 24 hours; removal revokes points. Photos expire after 24 hours.',
+        section('REVIEW SIGHTINGS', 'Accepted and rejected photos from the last 24 hours, newest first (up to 100 per filter). Rejected photos stay private and earn 0 points. Photos expire after 24 hours.',
+          field('Show photos', 'admin-photo-filter', photoHistoryFilter()),
           button('REFRESH', async () => { await loadReview(); repaint(); }, { cls: 'alt sm' }),
           ui.sightings === null && h('p', { class: 'small muted' }, 'Loading…'),
-          ui.sightings && !ui.sightings.length && h('p', { class: 'small muted' }, 'No sightings in the last 24 hours.'),
-          ...(ui.sightings || []).map((s) => h('div', { class: 'admin-item' + (s.status === 'rejected' ? ' dim' : '') },
+          ui.sightings && !ui.sightings.length && h('p', { class: 'small muted' }, 'No photos match this filter in the last 24 hours.'),
+          ...(ui.sightings || []).map((s) => h('div', { class: 'admin-item' },
             h('span', {},
               s.status === 'test' && h('b', { class: 'test-tag' }, 'TEST'), ' ',
               h('strong', {}, s.placeLabel || 'Sighting'),
               h('small', {}, ...nums(s.displayName + ' · ' + when(s.timestamp) + ' · ' + s.status + ' · ' + s.points + ' pt(s)')),
               s.caption && h('small', { class: 'quote' }, s.caption),
               s.photoCheck && h('small', { class: 'muted' }, s.photoCheck.status === 'unavailable' ? 'Checker unavailable · not published'
-                : 'Model score: ' + Number(s.photoCheck.score).toFixed(3) + ' · ' + (s.photoCheck.status === 'detected' ? 'Match detected' : 'Knightro not detected')),
+                : 'Model score: ' + Number(s.photoCheck.score).toFixed(3) + ' · Cutoff: ' + Number(s.photoCheck.threshold).toFixed(3) + ' · ' + (s.photoCheck.status === 'detected' ? 'Match detected' : 'Knightro not detected')),
               s.photoUrl && h('a', { href: s.photoUrl, target: '_blank', rel: 'noopener' },
                 h('img', { src: s.photoUrl, alt: 'Submitted photo for review', class: 'admin-review-photo', loading: 'lazy' }), 'View full photo')),
-            s.status === 'rejected' ? h('small', { class: 'muted' }, 'REMOVED')
+            s.status === 'rejected' ? h('small', { class: 'muted' }, rejectedByChecker(s) ? 'REJECTED · KNIGHTRO NOT DETECTED' : 'REMOVED')
               : ui.removeId === s.sightingId
                 ? h('div', { class: 'confirm-box' },
                   field('Reason', 'admin-remove-reason', input('admin-remove-reason', { maxlength: 140, placeholder: s.status === 'test' ? 'Test cleanup' : 'Not Knightro' }, ui.removeReason, (v) => (ui.removeReason = v))),

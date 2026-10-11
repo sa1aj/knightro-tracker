@@ -1,14 +1,15 @@
 # Knightro photo checker
 
-## Submission and review
+## Automatic submission decisions
 
 The Supabase API validates the signed-in account, campus location, fresh capture token, upload size, and cooldown. It strips metadata and stores an immutable JPEG in the private bucket, then calls the private CPU checker on the teal Vercel project. Classification runs outside the database transaction. Browser-supplied scores or decisions are ignored; retries classify the already stored photo.
 
-- Score at least **0.64576655626297**: publish and award the eligible points.
-- Lower score or an unavailable checker: save as **pending**, private to its owner and administrators, with **0 points**. Consume the capture token and normal two-minute cooldown.
-- Authorized administrators: turn on Admin Mode, open **Review Sightings**, inspect the photo, then **Approve** or **Remove**. Approval is audited and awards eligible points once. The existing unique bounty claim rule prevents double awards. Pending photos expire after 24 hours and cannot be approved once removed from storage.
+- Score at least **0.64576655626297**: publish immediately and award eligible points.
+- Lower score: HTTP **422**, ask the user to retake with Knightro clearly visible. No sighting or points are created.
+- Checker unavailable: HTTP **503**, ask the user to retry. No sighting is created.
+- Failed checks do not consume the capture token or start the posting cooldown. Captures still expire after two minutes, and request rate limits still apply. Uncommitted uploads are removed by scheduled cleanup. Retaking resets the request ID; retries use the same immutable photo.
 
-The classifier never automatically rejects a photo. The review list prioritizes pending photos and returns up to 100 reports from the past day. Public pins still expire 20 minutes after the original report time; approval does not turn an old report into a fresh sighting.
+There is no admin approval queue or approval endpoint. Admins can view and remove reports. Previously queued non-matches are retained as private rejected history with zero points. Public pins expire 20 minutes after posting and photos expire after 24 hours.
 
 ## Hosting and private access
 
@@ -22,7 +23,7 @@ Set **Production Secrets** on `knightro-tracker-team/knightro-tracker-frontend`:
 
 The model is **private**, pinned to revision `2e4b13d2ef456a987e20ea2da2b3c376dd993e65` of `Endooou/knightro-checker-20261010-bd35ae7d`. The 6.09 MB ONNX file is downloaded to `/tmp`, checked against SHA-256 `2a0860dc509679664759d71d7c16bfed5aad8c67057f0e7f41b416ec139c6d65`, and cached per process. No training photos, model weights, or tokens are in Git. No recurring training job, paid inference endpoint, or always-on GPU is created. Vercel plan quotas and CPU usage still apply.
 
-The Edge API uses the fixed teal origin, an eight-second model timeout, and no redirects carrying credentials. If that deployment or private model access is unavailable, submissions stay pending. Changing the inference hostname requires updating `_shared/photo-check.ts` and deploying the Edge API. Both approved frontend hostnames share this backend/checker.
+The Edge API uses the fixed teal origin, an eight-second model timeout, and no redirects carrying credentials. If that deployment or private model access is unavailable, submissions return a retry error without posting. Changing the inference hostname requires updating `_shared/photo-check.ts` and deploying the Edge API. Approved Vercel sites and the knightro.photo custom domains share this backend/checker. Sessions remain host-specific; sign in with the same account on each site.
 
 Deploy database migrations and `knightro-api` separately from GitHub/Vercel source deployments. The migration wraps the existing service-only RPC, preserving all other application operations, grants, and deny-by-default RLS.
 
@@ -32,7 +33,7 @@ Training: MobileNetV3-small, 196 training photos; 43 validation photos; 42 evalu
 
 The cutoff was selected from validation scores only: maximize recall with precision at least 95%, at most one false acceptance, and a cutoff at least 0.5. Evaluation photos had already been inspected during the earlier training review; this is not a newly collected independent benchmark.
 
-| Split | Knightro accepted | Knightro sent to review | Non-Knightro accepted | Non-Knightro sent to review |
+| Split | Knightro accepted | Knightro refused | Non-Knightro accepted | Non-Knightro refused |
 | --- | ---: | ---: | ---: | ---: |
 | Validation | 21 / 26 | 5 / 26 | 1 / 17 | 16 / 17 |
 | Evaluation | 21 / 26 | 5 / 26 | 0 / 16 | 16 / 16 |

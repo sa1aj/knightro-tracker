@@ -27,7 +27,7 @@ Email codes and email-based password recovery are disabled. An accepted UCF doma
 - `GET /api/my-reports`: signed-in account's latest 30 reports as `{reports:[...]}`.
 - `GET /api/leaderboard`: `{leaders:[{id,displayName,score}], period:"all-time"}`. Scores include published/confirmed reports and administrator adjustments; no other user's email is public.
 
-Before committing a new report, the API calls the private image classifier on the normalized stored JPEG. High-scoring matches publish and earn points; lower scores and checker outages produce `status:"pending"`, `points:0`, and eligible points held until admin approval. Pending photos are readable only by the owner or administrators. Browser `photoCheck`, status, scores, and decision fields are ignored. Pending reports consume the capture token and normal cooldown. Retries return pending reports idempotently too.
+Before committing a new report, the API calls the private image classifier on the normalized stored JPEG. A score at least 0.64576655626297 publishes immediately and earns points. Lower scores return HTTP 422 with a retake message; checker outages return HTTP 503 with a retry message. Neither creates a sighting, consumes the capture token, nor starts the posting cooldown. Failed upload reservations are removed by scheduled cleanup. Retaking resets the request ID; retries use the same immutable stored JPEG. Browser `photoCheck`, status, scores, and decision fields are ignored. Old queued non-matches remain private rejected history with zero points.
 
 Pins expire independently of photo retention. The classifier recognizes Knightro depictions and cannot prove a live encounter or physical camera capture. [Photo checker operations](photo-checker.md) describes the pinned model and calibration.
 
@@ -53,8 +53,7 @@ Only confirmed account UUIDs granted in `knightro.admins` have administrator acc
 - `POST /api/admin/points {userId,amount,reason,requestId,confirm:true}`: nonzero integer amount up to ±1000, reason 3–140 characters, idempotent request ID. Cannot reduce a score below zero.
 - `GET /api/admin/test-events`; `POST /api/admin/test-events {title,description,startsAt,endsAt,lat,long,eventId?}`; `POST /api/admin/test-events/delete {eventId,confirm:true}`.
 - `GET /api/admin/test-sightings`; `POST /api/admin/test-sightings {lat,long,caption}`. Test reports earn zero points and are excluded from public sightings/leaderboard.
-- `GET /api/admin/sightings`: up to 100 reports from the last day, pending first, with private `photoCheck` status/score/model metadata.
-- `POST /api/admin/sightings/approve {sightingId,confirm:true}`: approves an unexpired pending photo, publishes as confirmed, and awards eligible points once. Repeated approvals are idempotent and bounty awards cannot duplicate.
+- `GET /api/admin/sightings`: up to 100 reports from the last day, newest first, with private `photoCheck` status/score/model metadata. There is no manual approval route.
 - `POST /api/admin/sightings/remove {sightingId,reason,confirm:true}`: rejects the report and revokes its points.
 - `POST /api/admin/test-data/clear {confirm:true}` and `GET /api/admin/log`.
 

@@ -18,7 +18,7 @@ This project can use the existing Knightro Supabase backend. It does not need a 
 3. Obtain the existing proxy token through an authorized Supabase operator. Store it as a sensitive server environment variable. Never put it in Git, client JavaScript, screenshots, or a `NEXT_PUBLIC_` / `VITE_` variable. No Supabase service key belongs in Vercel.
 4. Deploy the latest commit on `main` after saving the variables. Adding variables does not change a previously built deployment.
 
-The backend approves this exact production hostname and the newer `knightro-tracker-potatogigabyte.vercel.app` hostname. Both frontends use the same data. Browser session cookies belong to each hostname, so users sign in separately on each site with the same account.
+The backend approves this exact production hostname, `knightro-tracker-potatogigabyte.vercel.app`, `https://knightro.photo`, and `https://www.knightro.photo`. All approved sites use the same data. Browser session cookies belong to each hostname, so users sign in separately on each site with the same account.
 
 ## Diagnose a remaining connection problem
 
@@ -29,4 +29,4 @@ The backend approves this exact production hostname and the newer `knightro-trac
 
 GitHub integration will deploy later source changes automatically. Database migrations and Supabase Edge Function releases are deployed separately using the instructions in `supabase/README.md`. The event feed reads the most recently imported completed scraper database; no recurring scraper is configured.
 
-The teal project also hosts the private CPU photo checker at `/internal/photo-check`. Model access is server-only. [Photo checker operations](photo-checker.md) covers deployment, calibration, and the admin review queue. Other approved frontend sites share this checker through Supabase.
+The teal project also hosts the private CPU photo checker at `/internal/photo-check`. Model access is server-only. [Photo checker operations](photo-checker.md) covers deployment, calibration, and automatic photo decisions. Other approved frontend sites share this checker through Supabase.

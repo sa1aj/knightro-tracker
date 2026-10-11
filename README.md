@@ -34,8 +34,8 @@ There is **no recurring scraper**, and AWS is not required for this production s
 - Sessions use a secure HttpOnly cookie lasting up to 14 days.
 - Snap a fresh camera photo and submit within two minutes. Reports have a **120-second cooldown per account**.
 - Pins fade and expire after 20 minutes. Main, Rosen, and Downtown campuses are supported, with building labels from official UCF footprints.
-- Approved reports earn one point; the first approved report inside the day's selected bounty section earns two. Bounties rotate at midnight America/New_York.
-- A private Knightro image classifier checks every photo before publishing. Uncertain photos and checker outages go to private admin review with zero points until approved. There is no automatic rejection.
+- Photos accepted by the Knightro checker earn one point; the first accepted report inside the day's selected bounty section earns two. Bounties rotate at midnight America/New_York.
+- A private Knightro image classifier checks every photo before publishing. Detected matches publish automatically. Non-matches are refused with a retake message; checker outages ask users to retry. No admin approval is required.
 - JPEGs are normalized to at most 800 pixels on their longer side and stripped of EXIF/GPS metadata. Photos expire after 24 hours; report history and points remain.
 - Nearby pins group together. The left menu gives access to accounts, leaderboard, events, and authorized admin tools.
 - Knight-Sense hints use likely event listings and separately opted-in building-level presence. Hints do not confirm mascot attendance. Web Push requires browser permission.

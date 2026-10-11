@@ -10,11 +10,12 @@ export async function checkPhoto(photo:Uint8Array,settings:Data):Promise<Data> {
       body:new Uint8Array(photo),signal:AbortSignal.timeout(8000)});
     if(!response.ok) return unavailable;
     const value=await response.json();
-    if(!['detected','review'].includes(value.status) || !Number.isFinite(value.score) || value.score<0 || value.score>1
+    // Accept the former label during a rolling deployment; it is still a non-match.
+    if(!['detected','not-detected','review'].includes(value.status) || !Number.isFinite(value.score) || value.score<0 || value.score>1
       || !Number.isFinite(value.threshold) || value.threshold<.5 || value.threshold>1
       || !/^[a-f0-9]{40}$/.test(value.modelRevision||'') || !/^[a-f0-9]{64}$/.test(value.modelHash||'')
-      || value.status!==(value.score>=value.threshold?'detected':'review')) return unavailable;
-    return {status:value.status,score:value.score,threshold:value.threshold,
+      || (value.status==='detected')!==(value.score>=value.threshold)) return unavailable;
+    return {status:value.status==='detected'?'detected':'not-detected',score:value.score,threshold:value.threshold,
       modelRevision:value.modelRevision,modelHash:value.modelHash,checkedAt:Math.floor(Date.now()/1000)};
   } catch { return unavailable; }
 }
